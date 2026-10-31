@@ -1,0 +1,17 @@
+.git
+.github
+*.log
+*.sqlite
+*.sqlite3
+*.db
+instance/
+backups/
+__pycache__/
+*.pyc
+tests/
+scratch/
+temp/
+.tempmediaStorage/
+.env*
+.DS_Store
+Thumbs.db

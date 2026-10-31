@@ -112,7 +112,7 @@ def get_status():
 
     return jsonify({
         "status": sys_status,
-        "assistant": "VANTIQ — AI-Powered Business Intelligence Assistant",
+        "assistant": "SARTHI — AI-Powered Business Intelligence Platform",
         "system": platform.system(),
         "release": platform.release(),
         "processor": platform.processor() or "Stark Quantum Arc Core",
@@ -766,7 +766,7 @@ def export_bi_report():
 
     if export_format == 'json':
         resp = jsonify(CURRENT_BI_REPORT)
-        resp.headers['Content-Disposition'] = f'attachment; filename="vantiq_bi_report_{safe_name}.json"'
+        resp.headers['Content-Disposition'] = f'attachment; filename="sarthi_bi_report_{safe_name}.json"'
         return resp
 
     elif export_format == 'csv':
@@ -774,7 +774,7 @@ def export_bi_report():
         return Response(
             csv_str,
             mimetype='text/csv',
-            headers={'Content-Disposition': f'attachment; filename="vantiq_bi_report_{safe_name}.csv"'}
+            headers={'Content-Disposition': f'attachment; filename="sarthi_bi_report_{safe_name}.csv"'}
         )
 
     elif export_format == 'html':
@@ -782,7 +782,7 @@ def export_bi_report():
         return Response(
             html_str,
             mimetype='text/html',
-            headers={'Content-Disposition': f'attachment; filename="vantiq_bi_report_{safe_name}.html"'}
+            headers={'Content-Disposition': f'attachment; filename="sarthi_bi_report_{safe_name}.html"'}
         )
 
     else:
@@ -904,7 +904,7 @@ def open_saved_dataset(dataset_id):
         "dataset_id": dataset_id,
         "dataset": ds,
         "report": CURRENT_BI_REPORT,
-        "message": f"Dataset '{ds['original_filename']}' is now the active dataset in VANTIQ."
+        "message": f"Dataset '{ds['original_filename']}' is now the active dataset in SARTHI."
     }), 200
 
 @app.route('/api/datasets/<dataset_id>/analyze', methods=['POST'])
@@ -1333,7 +1333,7 @@ def process_command():
             "speak": f"An unexpected error occurred while executing that order: {str(e)}",
             "display": f"Execution Error: {str(e)}",
             "action": "error",
-            "source": "VANTIQ Core",
+            "source": "SARTHI Core",
             "source_type": "system"
         }), 200
 

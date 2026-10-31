@@ -35,6 +35,8 @@ ANALYSIS_ENGINE_VERSION = "v1.0.0"
 
 def get_db_path() -> str:
     """Returns the absolute path to the configured SQLite database file."""
+    if os.environ.get("VERCEL"):
+        return os.environ.get("VANTIQ_DB_PATH", os.environ.get("JARVIS_DB_PATH", "/tmp/vantiq_business.db"))
     return os.environ.get("VANTIQ_DB_PATH", os.environ.get("JARVIS_DB_PATH", DEFAULT_DB_PATH))
 
 def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
@@ -51,7 +53,10 @@ def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
 
     conn = sqlite3.connect(path, timeout=30.0)
     conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA journal_mode = WAL;")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL;")
+    except Exception:
+        pass
     conn.row_factory = sqlite3.Row
     return conn
 
