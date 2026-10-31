@@ -285,7 +285,7 @@ class TestConversationalIntelligenceStep6(unittest.TestCase):
 
         r3 = intent_router.route_intent("tum kaun ho", db_path=self.db_path)
         self.assertEqual(r3.get("action"), "identity")
-        self.assertIn("vantiq", r3.get("speak", "").lower())
+        self.assertTrue(any(w in r3.get("speak", "").lower() for w in ["sarthi", "vantiq"]))
 
     # =========================================================================
     # 2. PRODUCT CATALOGUE & PRODUCT DETAILS

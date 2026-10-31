@@ -602,7 +602,7 @@ def _build_market_price_clarification_response(target: Optional[str], cat_conn: 
     # Check if target is a stopword or missing
     if not target or multilingual.is_product_stopword(target):
         if lang == "hi":
-            msg = "VANTIQ आंतरिक कैटलॉग विक्रय मूल्य (selling price) और खरीद लागत (purchase cost) रिकॉर्ड करता है, लेकिन लाइव मार्केट फीड के बिना बाहरी खुले बाजार की कीमतों का सत्यापन नहीं किया जा सकता। आप किस प्रोडक्ट की आंतरिक कीमतें जांचना चाहते हैं?"
+            msg = "SARTHI आंतरिक कैटलॉग विक्रय मूल्य (selling price) और खरीद लागत (purchase cost) रिकॉर्ड करता है, लेकिन लाइव मार्केट फीड के बिना बाहरी खुले बाजार की कीमतों का सत्यापन नहीं किया जा सकता। आप किस प्रोडक्ट की आंतरिक कीमतें जांचना चाहते हैं?"
         elif lang == "hinglish":
             msg = "SARTHI internal catalogue selling price aur procurement cost record karta hai, lekin external open-market price live market feed ke bina verify nahi ki ja sakti. Aap kis product ki internal pricing check karna chahte hain?"
         else:
@@ -630,7 +630,7 @@ def _build_market_price_clarification_response(target: Optional[str], cat_conn: 
         curr_sym = "₹" if curr in ("INR", "₹") else f"{curr} "
 
         if lang == "hi":
-            msg = f"VANTIQ में '{p_name}' की आंतरिक विक्रय मूल्य {curr_sym}{sp:,.2f} और पिछली खरीद लागत {curr_sym}{pc:,.2f} दर्ज है। बाहरी खुले बाजार की कीमत का वर्तमान में सत्यापन नहीं किया जा सकता क्योंकि बाहरी मार्केट रिसर्च उपलब्ध नहीं है। क्या आप आंतरिक कैटलॉग मूल्य जानना चाहते थे?"
+            msg = f"SARTHI में '{p_name}' की आंतरिक विक्रय मूल्य {curr_sym}{sp:,.2f} और पिछली खरीद लागत {curr_sym}{pc:,.2f} दर्ज है। बाहरी खुले बाजार की कीमत का वर्तमान में सत्यापन नहीं किया जा सकता क्योंकि बाहरी मार्केट रिसर्च उपलब्ध नहीं है। क्या आप आंतरिक कैटलॉग मूल्य जानना चाहते थे?"
         elif lang == "hinglish":
             msg = f"SARTHI mein '{p_name}' ki internal selling price {curr_sym}{sp:,.2f} aur recorded purchase cost {curr_sym}{pc:,.2f} hai. External open-market price live feeds ke bina verify nahi ho sakti. Kya aap internal catalogue price dekhna chahte hain?"
         else:
@@ -650,7 +650,7 @@ def _build_market_price_clarification_response(target: Optional[str], cat_conn: 
         }
     else:
         if lang == "hi":
-            msg = f"'{target}' कैटलॉग में नहीं मिला। VANTIQ आंतरिक कैटलॉग कीमतें दर्ज करता है, लेकिन बाहरी खुले बाजार की कीमतों का सत्यापन नहीं कर सकता।"
+            msg = f"'{target}' कैटलॉग में नहीं मिला। SARTHI आंतरिक कैटलॉग कीमतें दर्ज करता है, लेकिन बाहरी खुले बाजार की कीमतों का सत्यापन नहीं कर सकता।"
         elif lang == "hinglish":
             msg = f"'{target}' catalogue mein nahi mila. SARTHI internal catalogue prices track karta hai, external market prices verify nahi kar sakta."
         else:
@@ -926,7 +926,483 @@ def _build_catalogue_margin_response(cat_conn: Any, context: Optional[Dict[str, 
     }
 
 
-def _build_stock_response(target: str, cat_conn: Any, source_label: str = "Inventory Balance", lang: str = "en", db_path: Optional[str] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
+def _resolve_tabular_dataset_df(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
+    """Resolves active, contextual, or latest tabular dataset and returns (df, ds_info)."""
+    import pandas as pd
+    context = context or {}
+    target_ds_id = None
+    if context.get("active_dataset_id"):
+        target_ds_id = context["active_dataset_id"]
+    elif isinstance(context.get("current_file_info"), dict) and context["current_file_info"].get("dataset_id"):
+        target_ds_id = context["current_file_info"]["dataset_id"]
+
+    if target_ds_id:
+        try:
+            df, ds = database.load_dataset_dataframe(target_ds_id, db_path=db_path)
+            if df is not None and not df.empty:
+                return df, ds
+        except Exception:
+            pass
+
+    # Fallback to the latest tabular dataset in the database
+    try:
+        ds_res = database.list_datasets(page=1, page_size=10, db_path=db_path)
+        datasets = ds_res.get("datasets") or ds_res.get("items") or []
+        for d in datasets:
+            if d.get("file_type") in ("xlsx", "xls", "csv") or (d.get("row_count") or 0) > 0:
+                df, ds = database.load_dataset_dataframe(d["id"], db_path=db_path)
+                if df is not None and not df.empty:
+                    return df, ds
+    except Exception as e:
+        logger.warning(f"Failed to resolve tabular dataset: {e}")
+
+    return None, None
+
+
+def _build_product_sales_volume_response(target: str, context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No sales dataset is currently loaded. Please upload a sales spreadsheet first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Sales Dataset") if ds else "Sales Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    prod_col = roles.get("product") or "Product"
+    qty_col = roles.get("quantity") or "Quantity"
+    rev_col = roles.get("sales") or "TotalPrice"
+
+    t_clean = target.strip().lower()
+    matches = df[df[prod_col].astype(str).str.strip().str.lower() == t_clean]
+    if matches.empty:
+        matches = df[df[prod_col].astype(str).str.strip().str.lower().str.contains(t_clean, regex=False)]
+
+    if matches.empty:
+        avail_prods = ", ".join(df[prod_col].dropna().unique().astype(str)[:5])
+        speak_text = f"No sales records found for '{target}' in {filename}. Available products: {avail_prods}."
+        return {"speak": speak_text, "display": f"Sales: No records for '{target}'", "action": "product_sales_volume", "source": f"Dataset: {filename}", "source_type": "dataset"}
+
+    prod_name = matches[prod_col].iloc[0]
+    total_qty = int(pd.to_numeric(matches[qty_col], errors='coerce').fillna(0).sum()) if qty_col in matches else len(matches)
+    total_orders = len(matches)
+    total_rev = round(float(pd.to_numeric(matches[rev_col], errors='coerce').fillna(0).sum()), 2) if rev_col in matches else 0.0
+
+    speak_text = f"A total of {total_qty:,} units of {prod_name} have been sold across {total_orders} recorded transactions, generating ₹{total_rev:,.2f} in total revenue."
+    display_text = f"{prod_name} Sales: {total_qty:,} units sold across {total_orders} transactions (Total Revenue: ₹{total_rev:,.2f})."
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "product_sales_volume",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "product": prod_name,
+        "units_sold": total_qty,
+        "transaction_count": total_orders,
+        "total_revenue": total_rev,
+        "follow_ups": [f"Show total revenue of {prod_name}", "Which product generated the highest revenue?", "Show monthly sales trends"]
+    }
+
+
+def _build_product_sales_revenue_response(target: str, context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No sales dataset is currently loaded. Please upload a sales spreadsheet first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Sales Dataset") if ds else "Sales Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    prod_col = roles.get("product") or "Product"
+    qty_col = roles.get("quantity") or "Quantity"
+    rev_col = roles.get("sales") or "TotalPrice"
+
+    t_clean = target.strip().lower()
+    matches = df[df[prod_col].astype(str).str.strip().str.lower() == t_clean]
+    if matches.empty:
+        matches = df[df[prod_col].astype(str).str.strip().str.lower().str.contains(t_clean, regex=False)]
+
+    if matches.empty:
+        avail_prods = ", ".join(df[prod_col].dropna().unique().astype(str)[:5])
+        speak_text = f"No revenue records found for '{target}' in {filename}. Available products: {avail_prods}."
+        return {"speak": speak_text, "display": f"Revenue: No records for '{target}'", "action": "product_sales_revenue", "source": f"Dataset: {filename}", "source_type": "dataset"}
+
+    prod_name = matches[prod_col].iloc[0]
+    total_rev = round(float(pd.to_numeric(matches[rev_col], errors='coerce').fillna(0).sum()), 2) if rev_col in matches else 0.0
+    total_qty = int(pd.to_numeric(matches[qty_col], errors='coerce').fillna(0).sum()) if qty_col in matches else len(matches)
+    total_orders = len(matches)
+    avg_price = round(total_rev / total_qty, 2) if total_qty > 0 else 0.0
+
+    speak_text = f"Total sales revenue for {prod_name} is ₹{total_rev:,.2f} across {total_orders} recorded transactions, with {total_qty:,} units sold at an average price of ₹{avg_price:,.2f} per unit."
+    display_text = f"{prod_name} Revenue: ₹{total_rev:,.2f} ({total_qty:,} units sold across {total_orders} orders)."
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "product_sales_revenue",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "product": prod_name,
+        "total_revenue": total_rev,
+        "units_sold": total_qty,
+        "transaction_count": total_orders,
+        "average_unit_price": avg_price,
+        "follow_ups": [f"What is the stock of {prod_name}?", "Which product generated the highest revenue?", "Show total sales by region"]
+    }
+
+
+def _build_top_sales_product_response(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No sales dataset is currently loaded. Please upload a sales spreadsheet first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Sales Dataset") if ds else "Sales Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    prod_col = roles.get("product") or "Product"
+    qty_col = roles.get("quantity") or "Quantity"
+    rev_col = roles.get("sales") or "TotalPrice"
+
+    grouped = df.groupby(prod_col).agg(
+        total_rev=(rev_col, lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum()),
+        total_qty=(qty_col, lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum()),
+        orders=(prod_col, 'count')
+    ).sort_values(by='total_rev', ascending=False)
+
+    top_name = str(grouped.index[0])
+    top_rev = round(float(grouped.iloc[0]['total_rev']), 2)
+    top_qty = int(grouped.iloc[0]['total_qty'])
+    top_orders = int(grouped.iloc[0]['orders'])
+
+    second_name = str(grouped.index[1]) if len(grouped) > 1 else ""
+    second_rev = round(float(grouped.iloc[1]['total_rev']), 2) if len(grouped) > 1 else 0.0
+
+    speak_text = f"{top_name} generated the highest revenue at ₹{top_rev:,.2f} with {top_qty:,} units sold across {top_orders} orders."
+    if second_name:
+        speak_text += f" {second_name} ranked second with ₹{second_rev:,.2f}."
+
+    display_text = f"Top Revenue Product: {top_name} with ₹{top_rev:,.2f} ({top_qty:,} units sold across {top_orders} orders)."
+
+    table_rows = []
+    for rank, (name, row) in enumerate(grouped.head(7).iterrows(), 1):
+        table_rows.append({
+            "rank": f"#{rank}",
+            "product": str(name),
+            "revenue": f"₹{float(row['total_rev']):,.2f}",
+            "units_sold": f"{int(row['total_qty']):,}",
+            "orders": f"{int(row['orders']):,}"
+        })
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "top_sales_product",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "leader": {"product": top_name, "revenue": top_rev, "units_sold": top_qty, "orders": top_orders},
+        "table": {"columns": ["RANK", "PRODUCT", "REVENUE", "UNITS SOLD", "ORDERS"], "rows": table_rows},
+        "follow_ups": ["Which products have the lowest sales?", "Show total sales by region", "Show monthly sales trends"]
+    }
+
+
+def _build_lowest_sales_product_response(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No sales dataset is currently loaded. Please upload a sales spreadsheet first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Sales Dataset") if ds else "Sales Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    prod_col = roles.get("product") or "Product"
+    qty_col = roles.get("quantity") or "Quantity"
+    rev_col = roles.get("sales") or "TotalPrice"
+
+    grouped = df.groupby(prod_col).agg(
+        total_rev=(rev_col, lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum()),
+        total_qty=(qty_col, lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum()),
+        orders=(prod_col, 'count')
+    ).sort_values(by='total_rev', ascending=True)
+
+    bot_name = str(grouped.index[0])
+    bot_rev = round(float(grouped.iloc[0]['total_rev']), 2)
+    bot_qty = int(grouped.iloc[0]['total_qty'])
+    bot_orders = int(grouped.iloc[0]['orders'])
+
+    second_name = str(grouped.index[1]) if len(grouped) > 1 else ""
+    second_rev = round(float(grouped.iloc[1]['total_rev']), 2) if len(grouped) > 1 else 0.0
+
+    speak_text = f"{bot_name} generated the lowest sales revenue at ₹{bot_rev:,.2f} with {bot_qty:,} units sold across {bot_orders} orders."
+    if second_name:
+        speak_text += f" {second_name} was second lowest with ₹{second_rev:,.2f}."
+
+    display_text = f"Lowest Sales Product: {bot_name} with ₹{bot_rev:,.2f} ({bot_qty:,} units sold across {bot_orders} orders)."
+
+    table_rows = []
+    for rank, (name, row) in enumerate(grouped.head(5).iterrows(), 1):
+        table_rows.append({
+            "rank": f"#{rank}",
+            "product": str(name),
+            "revenue": f"₹{float(row['total_rev']):,.2f}",
+            "units_sold": f"{int(row['total_qty']):,}",
+            "orders": f"{int(row['orders']):,}"
+        })
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "lowest_sales_product",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "lowest": {"product": bot_name, "revenue": bot_rev, "units_sold": bot_qty, "orders": bot_orders},
+        "table": {"columns": ["RANK", "PRODUCT", "REVENUE", "UNITS SOLD", "ORDERS"], "rows": table_rows},
+        "follow_ups": ["Which product generated the highest revenue?", "Show total sales by region", "Show monthly sales trends"]
+    }
+
+
+def _build_sales_by_region_response(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No sales dataset is currently loaded. Please upload a sales spreadsheet first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Sales Dataset") if ds else "Sales Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    reg_col = roles.get("region") or "Region"
+    qty_col = roles.get("quantity") or "Quantity"
+    rev_col = roles.get("sales") or "TotalPrice"
+
+    if reg_col not in df.columns:
+        msg = f"No region column detected in {filename}."
+        return {"speak": msg, "display": msg, "action": "sales_by_region", "source": f"Dataset: {filename}", "source_type": "dataset"}
+
+    grouped = df.groupby(reg_col).agg(
+        total_rev=(rev_col, lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum()),
+        total_qty=(qty_col, lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum()),
+        orders=(reg_col, 'count')
+    ).sort_values(by='total_rev', ascending=False)
+
+    grand_total_rev = round(float(grouped['total_rev'].sum()), 2)
+    grand_total_orders = int(grouped['orders'].sum())
+
+    top_region = str(grouped.index[0])
+
+    region_summary_parts = []
+    for reg_name, row in grouped.iterrows():
+        region_summary_parts.append(f"{reg_name}: ₹{float(row['total_rev']):,.2f}")
+
+    speak_text = f"Total sales by region across {grand_total_orders:,} transactions totaling ₹{grand_total_rev:,.2f}: " + ", ".join(region_summary_parts) + "."
+    display_text = f"Regional Sales Breakdown (Total: ₹{grand_total_rev:,.2f} across {grand_total_orders:,} orders)."
+
+    table_rows = []
+    for rank, (name, row) in enumerate(grouped.iterrows(), 1):
+        share_pct = round((float(row['total_rev']) / grand_total_rev) * 100, 1) if grand_total_rev > 0 else 0.0
+        table_rows.append({
+            "region": str(name),
+            "orders": f"{int(row['orders']):,}",
+            "units_sold": f"{int(row['total_qty']):,}",
+            "total_revenue": f"₹{float(row['total_rev']):,.2f}",
+            "share": f"{share_pct}%"
+        })
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "sales_by_region",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "total_revenue": grand_total_rev,
+        "total_orders": grand_total_orders,
+        "top_region": top_region,
+        "table": {"columns": ["REGION", "ORDERS", "UNITS SOLD", "TOTAL REVENUE", "SHARE (%)"], "rows": table_rows},
+        "follow_ups": ["Which product generated the highest revenue?", "Show monthly sales trends", "Summarize the uploaded dataset"]
+    }
+
+
+def _build_monthly_sales_trends_response(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No sales dataset is currently loaded. Please upload a sales spreadsheet first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Sales Dataset") if ds else "Sales Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    date_col = roles.get("date") or "Date"
+    rev_col = roles.get("sales") or "TotalPrice"
+
+    if date_col not in df.columns:
+        msg = f"No date column detected in {filename} to calculate monthly trends."
+        return {"speak": msg, "display": msg, "action": "monthly_sales_trends", "source": f"Dataset: {filename}", "source_type": "dataset"}
+
+    df_copy = df.copy()
+    df_copy['__dt'] = pd.to_datetime(df_copy[date_col], errors='coerce')
+    valid_dt = df_copy[df_copy['__dt'].notnull()].copy()
+    if valid_dt.empty:
+        msg = f"Date values in {filename} could not be parsed."
+        return {"speak": msg, "display": msg, "action": "monthly_sales_trends", "source": f"Dataset: {filename}", "source_type": "dataset"}
+
+    valid_dt['__month'] = valid_dt['__dt'].dt.to_period('M')
+    grouped = valid_dt.groupby('__month').agg(
+        total_rev=(rev_col, lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum()),
+        orders=('__dt', 'count')
+    ).sort_index()
+
+    month_count = len(grouped)
+    total_rev = round(float(grouped['total_rev'].sum()), 2)
+    avg_rev = round(float(grouped['total_rev'].mean()), 2)
+    peak_period = str(grouped['total_rev'].idxmax())
+    peak_rev = round(float(grouped['total_rev'].max()), 2)
+    start_period = str(grouped.index[0])
+    end_period = str(grouped.index[-1])
+
+    speak_text = f"Monthly sales trends span {month_count} months from {start_period} to {end_period}, generating ₹{total_rev:,.2f} total revenue, averaging ₹{avg_rev:,.2f} per month. Peak revenue occurred in {peak_period} at ₹{peak_rev:,.2f}."
+    display_text = f"Monthly Revenue Trends: {month_count} months ({start_period} – {end_period}) | Avg: ₹{avg_rev:,.2f}/mo | Peak: {peak_period} (₹{peak_rev:,.2f})."
+
+    table_rows = []
+    for period, row in list(grouped.iterrows())[-8:]:
+        table_rows.append({
+            "month": str(period),
+            "orders": f"{int(row['orders']):,}",
+            "revenue": f"₹{float(row['total_rev']):,.2f}"
+        })
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "monthly_sales_trends",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "month_count": month_count,
+        "total_revenue": total_rev,
+        "average_monthly_revenue": avg_rev,
+        "peak_month": peak_period,
+        "peak_revenue": peak_rev,
+        "table": {"columns": ["MONTH", "ORDERS", "REVENUE"], "rows": table_rows},
+        "follow_ups": ["Which product generated the highest revenue?", "Show total sales by region", "Summarize the uploaded dataset"]
+    }
+
+
+def _build_compare_product_sales_response(prod_a: str, prod_b: str, context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No sales dataset is currently loaded. Please upload a sales spreadsheet first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Sales Dataset") if ds else "Sales Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    prod_col = roles.get("product") or "Product"
+    qty_col = roles.get("quantity") or "Quantity"
+    rev_col = roles.get("sales") or "TotalPrice"
+
+    def get_prod_stats(p_name):
+        matches = df[df[prod_col].astype(str).str.strip().str.lower() == p_name.strip().lower()]
+        if matches.empty:
+            matches = df[df[prod_col].astype(str).str.strip().str.lower().str.contains(p_name.strip().lower(), regex=False)]
+        if matches.empty:
+            return None
+        actual_name = matches[prod_col].iloc[0]
+        rev = round(float(pd.to_numeric(matches[rev_col], errors='coerce').fillna(0).sum()), 2)
+        qty = int(pd.to_numeric(matches[qty_col], errors='coerce').fillna(0).sum())
+        orders = len(matches)
+        avg_p = round(rev / qty, 2) if qty > 0 else 0.0
+        return {"name": actual_name, "rev": rev, "qty": qty, "orders": orders, "avg_price": avg_p}
+
+    stats_a = get_prod_stats(prod_a)
+    stats_b = get_prod_stats(prod_b)
+
+    if not stats_a or not stats_b:
+        missing = prod_a if not stats_a else prod_b
+        speak_text = f"Could not find sales records for '{missing}' in {filename} to perform the comparison."
+        return {"speak": speak_text, "display": speak_text, "action": "compare_product_sales", "source": f"Dataset: {filename}", "source_type": "dataset"}
+
+    higher = stats_a if stats_a['rev'] >= stats_b['rev'] else stats_b
+    lower = stats_b if stats_a['rev'] >= stats_b['rev'] else stats_a
+    diff_rev = round(higher['rev'] - lower['rev'], 2)
+    diff_pct = round((diff_rev / lower['rev']) * 100, 2) if lower['rev'] > 0 else 0.0
+    diff_qty = higher['qty'] - lower['qty']
+
+    speak_text = (
+        f"Comparing {stats_a['name']} and {stats_b['name']} sales: "
+        f"{higher['name']} generated ₹{higher['rev']:,.2f} from {higher['qty']:,} units sold across {higher['orders']} orders, "
+        f"outperforming {lower['name']} (₹{lower['rev']:,.2f}, {lower['qty']:,} units) by ₹{diff_rev:,.2f} (+{diff_pct}%)."
+    )
+    display_text = f"Comparison: {higher['name']} (₹{higher['rev']:,.2f}, {higher['qty']:,} units) outperformed {lower['name']} (₹{lower['rev']:,.2f}, {lower['qty']:,} units) by ₹{diff_rev:,.2f}."
+
+    table_rows = [
+        {"metric": "Total Revenue", stats_a['name']: f"₹{stats_a['rev']:,.2f}", stats_b['name']: f"₹{stats_b['rev']:,.2f}", "difference": f"+₹{diff_rev:,.2f} ({higher['name']})"},
+        {"metric": "Units Sold", stats_a['name']: f"{stats_a['qty']:,}", stats_b['name']: f"{stats_b['qty']:,}", "difference": f"{abs(diff_qty):,} units"},
+        {"metric": "Order Count", stats_a['name']: f"{stats_a['orders']:,}", stats_b['name']: f"{stats_b['orders']:,}", "difference": f"{abs(stats_a['orders'] - stats_b['orders']):,} orders"},
+        {"metric": "Avg Unit Price", stats_a['name']: f"₹{stats_a['avg_price']:,.2f}", stats_b['name']: f"₹{stats_b['avg_price']:,.2f}", "difference": f"₹{abs(round(stats_a['avg_price'] - stats_b['avg_price'], 2)):,.2f}"}
+    ]
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "compare_product_sales",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "comparison": {"higher": higher['name'], "revenue_diff": diff_rev, "percentage_diff": diff_pct},
+        "table": {"columns": ["METRIC", stats_a['name'].upper(), stats_b['name'].upper(), "DIFFERENCE"], "rows": table_rows},
+        "follow_ups": ["Which product generated the highest revenue?", "Show monthly sales trends", "Show total sales by region"]
+    }
+
+
+def _build_dataset_summary_response(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    import pandas as pd
+    df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
+    if df is None:
+        msg = "No dataset is currently loaded. Please upload an Excel or CSV file first."
+        return {"speak": msg, "display": msg, "action": "no_data", "source": "SARTHI BI", "source_type": "dataset"}
+
+    filename = ds.get("original_filename", "Uploaded Dataset") if ds else "Uploaded Dataset"
+    roles = business_insights.map_column_roles(df.columns)
+    prod_col = roles.get("product") or "Product"
+    reg_col = roles.get("region") or "Region"
+    qty_col = roles.get("quantity") or "Quantity"
+    rev_col = roles.get("sales") or "TotalPrice"
+    date_col = roles.get("date") or "Date"
+
+    row_count = len(df)
+    col_count = len(df.columns)
+    unique_prods = int(df[prod_col].nunique()) if prod_col in df.columns else 0
+    unique_regs = int(df[reg_col].nunique()) if reg_col in df.columns else 0
+    total_rev = round(float(pd.to_numeric(df[rev_col], errors='coerce').fillna(0).sum()), 2) if rev_col in df.columns else 0.0
+    total_qty = int(pd.to_numeric(df[qty_col], errors='coerce').fillna(0).sum()) if qty_col in df.columns else 0
+
+    timeline_str = ""
+    if date_col in df.columns:
+        dt_s = pd.to_datetime(df[date_col], errors='coerce').dropna()
+        if not dt_s.empty:
+            timeline_str = f" between {dt_s.min().strftime('%B %Y')} and {dt_s.max().strftime('%B %Y')}"
+
+    speak_text = (
+        f"Dataset summary for {filename}: {row_count:,} transaction rows across {col_count} columns "
+        f"covering {unique_prods} products and {unique_regs} sales regions. "
+        f"Total recorded revenue is ₹{total_rev:,.2f} with {total_qty:,} units sold{timeline_str}."
+    )
+    display_text = f"Summary: {filename} | {row_count:,} Rows x {col_count} Columns | Total Revenue: ₹{total_rev:,.2f} | Units Sold: {total_qty:,}."
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "dataset_summary",
+        "source": f"Dataset: {filename}",
+        "source_type": "dataset",
+        "row_count": row_count,
+        "column_count": col_count,
+        "unique_products": unique_prods,
+        "unique_regions": unique_regs,
+        "total_revenue": total_rev,
+        "total_units_sold": total_qty,
+        "follow_ups": ["Which product generated the highest revenue?", "Show total sales by region", "Show monthly sales trends"]
+    }
+
+
+def _build_stock_response(target: str, cat_conn: Any, source_label: str = "Inventory Balance", lang: str = "en", db_path: Optional[str] = None, session_id: Optional[str] = None, is_quantity_query: bool = False) -> Dict[str, Any]:
     target = (target or "").rstrip('?.').strip()
     session_ctx = multilingual.get_session_context(session_id)
     # Check contextual resolution if target is generic
@@ -971,18 +1447,44 @@ def _build_stock_response(target: str, cat_conn: Any, source_label: str = "Inven
         p = items[0]
         session_ctx.clear_pending_action()
         multilingual.SESSION_CONTEXT.update_product(p, language=lang)
-        if lang in ("hi", "hinglish"):
+
+        # Check sales dataset context for quantity inquiries to distinguish stock vs sales volume
+        sales_units = None
+        sales_orders = None
+        try:
+            import pandas as pd
+            df, ds = _resolve_tabular_dataset_df(context=None, db_path=db_path)
+            if df is not None and 'Product' in df and 'Quantity' in df:
+                p_matches = df[df['Product'].astype(str).str.strip().str.lower() == p['name'].strip().lower()]
+                if not p_matches.empty:
+                    sales_units = int(pd.to_numeric(p_matches['Quantity'], errors='coerce').fillna(0).sum())
+                    sales_orders = len(p_matches)
+        except Exception:
+            pass
+
+        orig_qty = p.get('quantity_on_hand', 0)
+        orig_reorder = p.get('reorder_level', 0) or 0
+        raw_unit = str(p.get('unit', '')).strip()
+        unit_val = "units" if not raw_unit or raw_unit.replace('.', '', 1).isdigit() else raw_unit
+
+        qty_str = f"{orig_qty}"
+        reorder_str = f"{orig_reorder}"
+
+        if is_quantity_query and sales_units is not None:
+            speak_text = f"{p['name']} currently has {qty_str} {unit_val} in stock (Reorder level: {reorder_str} {unit_val}). In sales records, a total of {sales_units:,} units have been sold across {sales_orders} orders."
+            display_text = f"{p['name']} currently has {qty_str} {unit_val} in stock. Reorder level: {reorder_str} {unit_val}. (Recorded sales volume: {sales_units:,} units sold across {sales_orders} orders)."
+        elif lang in ("hi", "hinglish") and not is_quantity_query:
             loc = multilingual.format_multilingual_response("product_stock", lang, {
                 "name": p["name"],
-                "quantity": p.get("quantity_on_hand", 0),
-                "unit": p.get("unit", "units"),
-                "reorder_level": p.get("reorder_level", 0)
+                "quantity": orig_qty,
+                "unit": unit_val,
+                "reorder_level": orig_reorder
             })
             speak_text = loc["speak"]
             display_text = loc["display"]
         else:
-            speak_text = f"Current stock of {p['name']} is {p['quantity_on_hand']} {p['unit']}. Reorder threshold is {p['reorder_level']} {p['unit']}."
-            display_text = f"{p['name']}: {p['quantity_on_hand']} {p['unit']} in stock (Reorder: {p['reorder_level']})"
+            speak_text = f"{p['name']} currently has {qty_str} {unit_val} in stock. Reorder level: {reorder_str} {unit_val}."
+            display_text = f"{p['name']} currently has {qty_str} {unit_val} in stock. Reorder level: {reorder_str} {unit_val}."
         return {
             "speak": speak_text,
             "display": display_text,
@@ -2069,7 +2571,26 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
                     "clarification_type": "missing_product",
                     "follow_ups": ["Show all products", "Check inventory summary"]
                 }
-            return _build_stock_response(target, cat_conn, source_label="Inventory Balance", lang=detected_lang, db_path=db_path, session_id=session_id)
+            is_qty = m_params.get("is_quantity_query", False)
+            return _build_stock_response(target, cat_conn, source_label="Inventory Balance", lang=detected_lang, db_path=db_path, session_id=session_id, is_quantity_query=is_qty)
+        elif m_intent == "product_sales_volume":
+            target = m_params.get("product_name")
+            return _build_product_sales_volume_response(target, context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "product_sales_revenue":
+            target = m_params.get("product_name")
+            return _build_product_sales_revenue_response(target, context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "top_sales_product":
+            return _build_top_sales_product_response(context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "lowest_sales_product":
+            return _build_lowest_sales_product_response(context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "sales_by_region":
+            return _build_sales_by_region_response(context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "monthly_sales_trends":
+            return _build_monthly_sales_trends_response(context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "compare_product_sales":
+            return _build_compare_product_sales_response(m_params.get("product_a"), m_params.get("product_b"), context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "dataset_summary":
+            return _build_dataset_summary_response(context=context, db_path=db_path, lang=detected_lang)
         elif m_intent == "product_price":
             target = m_params.get("product_name")
             if not target or multilingual.is_product_stopword(target):
@@ -2265,6 +2786,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
 
     is_dataset_query = any(k in c_lower for k in [
         'summarise this dataset', 'summarize this dataset', 'summarise dataset', 'summarize dataset',
+        'summarize the uploaded dataset', 'summarise the uploaded dataset', 'dataset summary',
         'how many rows and columns', 'rows and columns', 'how many rows', 'how many columns', 'row count', 'column count',
         'list all column names', 'list all columns', 'what are the columns', 'show columns', 'column names', 'list columns',
         'missing values in each column', 'missing values in this dataset', 'what are the missing values', 'missing values',
@@ -2536,6 +3058,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
 
     is_dataset_query = any(k in c_lower for k in [
         'summarise this dataset', 'summarize this dataset', 'summarise dataset', 'summarize dataset',
+        'summarize the uploaded dataset', 'summarise the uploaded dataset', 'dataset summary',
         'how many rows and columns', 'rows and columns', 'how many rows', 'how many columns', 'row count', 'column count',
         'list all column names', 'list all columns', 'what are the columns', 'show columns', 'column names', 'list columns',
         'missing values in each column', 'missing values in this dataset', 'what are the missing values', 'missing values',
@@ -2584,7 +3107,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
                 return {"speak": f"could not compute dimensions: {e}", "display": str(e), "action": "error"}
 
         # 2B. Summarize Dataset
-        if any(k in c_lower for k in ['summarise this dataset', 'summarize this dataset', 'summarise dataset', 'summarize dataset', 'dataset summary', 'tell me about this dataset']):
+        if any(k in c_lower for k in ['summarise this dataset', 'summarize this dataset', 'summarise dataset', 'summarize dataset', 'dataset summary', 'tell me about this dataset', 'summarize the uploaded dataset', 'summarise the uploaded dataset']):
             try:
                 res = dataset_intelligence.summarize_dataset(target_ds_id, db_path=db_path)
                 return {
@@ -3076,7 +3599,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
     try:
         active_ds_id = context.get("active_dataset_id") if context else None
         doc_match = rag_engine.answer_document_query(cmd, dataset_id=active_ds_id, db_path=db_path)
-        if doc_match.get("has_sufficient_evidence") and doc_match.get("confidence", 0.0) >= 0.12:
+        if doc_match.get("has_sufficient_evidence") and doc_match.get("confidence", 0.0) >= 0.35:
             ans = doc_match.get("answer", "")
             return {
                 "speak": ans,

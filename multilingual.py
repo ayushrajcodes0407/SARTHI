@@ -274,8 +274,8 @@ def format_multilingual_response(
     if intent == "identity":
         if lang == "hi":
             return {
-                "speak": "मैं VANTIQ हूँ, आपका AI-पावर्ड बिज़नेस इंटेलिजेंस असिस्टेंट। मैं प्रोडक्ट प्राइसिंग, स्टॉक, इन्वेंटरी और बिज़नेस रिपोर्ट्स में मदद कर सकता हूँ। आप मुझसे हिंदी, हिंग्लिश या अंग्रेज़ी में बात कर सकते हैं।",
-                "display": "मैं VANTIQ हूँ, आपका AI बिज़नेस असिस्टेंट। आप मुझसे हिंदी, हिंग्लिश या अंग्रेज़ी में सवाल पूछ सकते हैं।"
+                "speak": "मैं SARTHI हूँ, आपका AI-पावर्ड बिज़नेस इंटेलिजेंस असिस्टेंट। मैं प्रोडक्ट प्राइसिंग, स्टॉक, इन्वेंटरी और बिज़नेस रिपोर्ट्स में मदद कर सकता हूँ। आप मुझसे हिंदी, हिंग्लिश या अंग्रेज़ी में बात कर सकते हैं।",
+                "display": "मैं SARTHI हूँ, आपका AI बिज़नेस असिस्टेंट। आप मुझसे हिंदी, हिंग्लिश या अंग्रेज़ी में सवाल पूछ सकते हैं।"
             }
         elif lang == "hinglish":
             return {
@@ -308,8 +308,8 @@ def format_multilingual_response(
     elif intent == "greeting":
         if lang == "hi":
             return {
-                "speak": "नमस्ते! मैं VANTIQ हूँ। मैं आपके प्रोडक्ट कैटलॉग, इन्वेंटरी और बिज़नेस डेटा में कैसे सहायता कर सकता हूँ?",
-                "display": "नमस्ते! VANTIQ सहायता के लिए तैयार है।"
+                "speak": "नमस्ते! मैं SARTHI हूँ। मैं आपके प्रोडक्ट कैटलॉग, इन्वेंटरी और बिज़नेस डेटा में कैसे सहायता कर सकता हूँ?",
+                "display": "नमस्ते! SARTHI सहायता के लिए तैयार है।"
             }
         elif lang == "hinglish":
             return {
@@ -382,7 +382,7 @@ def format_multilingual_response(
         pp_str = f"{currency}{pp:,.2f}" if pp is not None else "Not Configured"
         if lang == "hi":
             return {
-                "speak": f"{name} के लिए VANTIQ में आंतरिक विक्रय मूल्य {sp_str} और खरीद लागत {pp_str} दर्ज है। बाहरी लाइव बाजार भाव अभी सत्यापित नहीं किया जा सकता। क्या आपका आशय हमारे आंतरिक विक्रय मूल्य, खरीद लागत या बाहरी बाजार मूल्य से था?",
+                "speak": f"{name} के लिए SARTHI में आंतरिक विक्रय मूल्य {sp_str} और खरीद लागत {pp_str} दर्ज है। बाहरी लाइव बाजार भाव अभी सत्यापित नहीं किया जा सकता। क्या आपका आशय हमारे आंतरिक विक्रय मूल्य, खरीद लागत या बाहरी बाजार मूल्य से था?",
                 "display": f"{name}: विक्रय मूल्य = {sp_str} | लागत = {pp_str} | बाहरी बाजार भाव: असत्यापित"
             }
         elif lang == "hinglish":
@@ -929,6 +929,82 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
         'stock kam hai', 'kam stock', 'स्टॉक कम है', 'किन प्रोडक्ट्स का स्टॉक कम है'
     ]):
         return ("low_stock_products", {})
+
+    # 5B. Structured Business Intelligence & Sales Analytics
+    # 5B-1. Dataset Summary (Hindi / Hinglish only, English routes to central dataset resolver)
+    if any(p in c_lower for p in ['dataset ka summary', 'dataset ka vivaran', 'dataset overview batao', 'is dataset ka summary']):
+        return ('dataset_summary', {})
+
+    # 5B-2. Regional Sales Breakdown
+    if any(p in c_lower for p in ['sales by region', 'sales by regions', 'regional sales', 'region wise sales', 'sales breakdown by region']) or (('sale' in c_lower or 'sales' in c_lower) and 'region' in c_lower):
+        return ('sales_by_region', {})
+
+    # 5B-3. Monthly Sales Trends & Revenue
+    if any(p in c_lower for p in ['monthly revenue', 'monthly sales trends', 'monthly sales trend', 'sales by month', 'month wise sales', 'monthly trends', 'monthly revenue trends']):
+        return ('monthly_sales_trends', {})
+
+    # 5B-4. Comparative Product Sales Analysis
+    m_comp = re.search(r'compare\s+(?:sales\s+(?:of\s+)?)?([a-zA-Z0-9_\-]+)\s+(?:and|vs|versus)\s+([a-zA-Z0-9_\-]+)(?:\s+sales)?', c_lower)
+    if m_comp:
+        p_a = m_comp.group(1).strip()
+        p_b = m_comp.group(2).strip()
+        date_words = {'this', 'last', 'month', 'year', 'week', 'quarter', 'today', 'yesterday', 'current', 'prior'}
+        if p_a not in date_words and p_b not in date_words:
+            return ('compare_product_sales', {'product_a': p_a, 'product_b': p_b})
+
+    # 5B-5. Top Performing Product (Highest Revenue / Highest Sales)
+    if any(p in c_lower for p in ['highest revenue', 'highest sales', 'highest selling', 'top selling', 'top revenue', 'best selling', 'sabse zyada bikne wala', 'sabse jyada bikne wala', 'sabse zyada sales', 'sabse jyada sales']):
+        return ('top_sales_product', {})
+
+    # 5B-6. Lowest Performing Product (Lowest Sales / Lowest Revenue)
+    if any(p in c_lower for p in ['lowest sales', 'lowest revenue', 'least sales', 'lowest selling', 'sabse kam bikne wala', 'sabse kam sales']):
+        return ('lowest_sales_product', {})
+
+    # 5B-7. Overall Inventory / Maal Availability
+    if any(p in c_lower for p in ['kitna maal available', 'kitna maal hai', 'total maal', 'maal kitna bacha', 'available maal']):
+        return ('inventory_summary', {})
+
+    # 5B-8. Specific Product Sales Volume
+    date_noise = {'this month', 'last month', 'recent', 'today', 'yesterday', 'this week', 'last week', 'this year', 'last year', 'all', 'product', 'products', 'each', 'region', 'month', 'months', 'year', 'years', 'week', 'weeks'}
+    m_sv1 = re.search(r'(?:total\s+)?quantity\s+(?:of\s+)?([a-zA-Z0-9_\-\s]+?)\s+sold', c_lower)
+    if m_sv1:
+        cand = m_sv1.group(1).strip()
+        if cand not in date_noise and not any(w in cand for w in ['month', 'year', 'week']):
+            return ('product_sales_volume', {'product_name': cand})
+    m_sv2 = re.search(r'(?:total\s+)?([a-zA-Z0-9_\-\s]+?)\s+sold\s+kitne\s+hue', c_lower)
+    if m_sv2:
+        cand = m_sv2.group(1).strip()
+        if cand not in date_noise and not any(w in cand for w in ['month', 'year', 'week']):
+            return ('product_sales_volume', {'product_name': cand})
+    m_sv3 = re.search(r'(?:show\s+(?:me\s+)?)?(?:total\s+)?sales\s+of\s+([a-zA-Z0-9_\-\s]+)', c_lower)
+    if m_sv3:
+        cand = m_sv3.group(1).strip()
+        if cand not in date_noise and not any(w in cand for w in ['month', 'year', 'week']):
+            return ('product_sales_volume', {'product_name': cand})
+
+    # 5B-9. Specific Product Sales Revenue
+    m_sr1 = re.search(r'(?:show\s+(?:me\s+)?)?(?:total\s+)?revenue\s+(?:of|for)\s+([a-zA-Z0-9_\-\s]+)', c_lower)
+    if m_sr1:
+        cand = m_sr1.group(1).strip()
+        if cand not in date_noise and not any(w in cand for w in ['month', 'year', 'week']):
+            return ('product_sales_revenue', {'product_name': cand})
+    m_sr2 = re.search(r'([a-zA-Z0-9_\-\s]+?)\s+ka\s+(?:total\s+)?revenue', c_lower)
+    if m_sr2:
+        cand = m_sr2.group(1).strip()
+        if cand not in date_noise and not any(w in cand for w in ['month', 'year', 'week']):
+            return ('product_sales_revenue', {'product_name': cand})
+
+    # 5B-10. Hinglish Quantity / Kitne hai (e.g. Chair kitne hai)
+    # Strictly excluded if query asks about stock, profit, margin, price, cost to preserve dedicated handlers
+    if not any(k in c_lower for k in ['stock', 'stok', 'स्टॉक', 'profit', 'margin', 'munafa', 'labh', 'price', 'keemat', 'cost', 'rate', 'bhav', 'bechne', 'selling']):
+        m_kh = re.search(r'([a-zA-Z0-9_\-\s]+?)\s+(?:kitne|kitna|kitni)\s+(?:hai|hain|bache\s+hai|bache\s+hain)', c_lower)
+        if m_kh:
+            cand = m_kh.group(1).strip()
+            cand = re.sub(r'^(?:is|iss|the|a|an)\s+', '', cand).strip()
+            if cand in ('maal', 'products', 'items'):
+                return ('inventory_summary', {})
+            if not is_product_stopword(cand):
+                return ('product_stock', {'product_name': cand, 'is_quantity_query': True})
 
     # 6. Specific product stock query & Incomplete Stock Inquiry
     # Handles: "Tell me the stock of the", "Tell me the stock of", "Stock of this product?",

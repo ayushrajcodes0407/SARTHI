@@ -611,13 +611,13 @@ class JarvisFullTestSuite(unittest.TestCase):
         res_csv = self.client.get('/api/export-report?format=csv')
         self.assertEqual(res_csv.status_code, 200)
         self.assertIn("text/csv", res_csv.content_type)
-        self.assertTrue(b"VANTIQ BUSINESS INTELLIGENCE REPORT" in res_csv.data or b"J.A.R.V.I.S. BUSINESS INTELLIGENCE REPORT" in res_csv.data)
+        self.assertTrue(b"SARTHI BUSINESS INTELLIGENCE REPORT" in res_csv.data or b"VANTIQ BUSINESS INTELLIGENCE REPORT" in res_csv.data or b"J.A.R.V.I.S. BUSINESS INTELLIGENCE REPORT" in res_csv.data)
 
         # Test HTML export
         res_html = self.client.get('/api/export-report?format=html')
         self.assertEqual(res_html.status_code, 200)
         self.assertIn("text/html", res_html.content_type)
-        self.assertTrue(b"VANTIQ BUSINESS INTELLIGENCE DOSSIER" in res_html.data or b"STARK INDUSTRIES BUSINESS INTELLIGENCE DOSSIER" in res_html.data)
+        self.assertTrue(b"SARTHI BUSINESS INTELLIGENCE DOSSIER" in res_html.data or b"VANTIQ BUSINESS INTELLIGENCE DOSSIER" in res_html.data or b"STARK INDUSTRIES BUSINESS INTELLIGENCE DOSSIER" in res_html.data)
         print("[PASS] Report export endpoints (HTML, CSV, JSON) verified.")
 
     def test_36_bi_voice_and_console_commands(self):

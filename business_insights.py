@@ -27,7 +27,7 @@ SYNONYMS = {
         'sku', 'product_code', 'item_code', 'model', 'description', 'part number', 'part_no'
     ],
     'cost': [
-        'purchase price', 'purchase_price', 'cost price', 'cost_price', 'buying rate',
+        'purchase cost', 'purchase_cost', 'purchase price', 'purchase_price', 'cost price', 'cost_price', 'buying rate',
         'buying_rate', 'purchase rate', 'purchase_rate', 'cost', 'unit cost', 'unit_cost',
         'buying price', 'buy price', 'cost_per_unit'
     ],
@@ -50,8 +50,12 @@ SYNONYMS = {
         'supplier_name', 'vendor_name', 'distributor', 'source'
     ],
     'sales': [
+        'totalprice', 'total_price', 'total price', 'total sales', 'total revenue',
         'sales', 'revenue', 'amount', 'total', 'sales_amount', 'line_total',
         'subtotal', 'gross sales', 'net sales', 'invoice_amount', 'total_amount'
+    ],
+    'region': [
+        'region', 'sales_region', 'sales region', 'territory', 'zone', 'area', 'location'
     ],
     'date': [
         'date', 'invoice date', 'transaction date', 'order date', 'sale date',
@@ -76,6 +80,7 @@ SYNONYMS = {
 }
 
 NON_COST_KEYWORDS = {'shipping', 'freight', 'delivery', 'courier', 'postage', 'transport', 'logistics'}
+NON_SALES_KEYWORDS = {'person', 'rep', 'representative', 'agent', 'team', 'manager', 'lead', 'executive', 'name'}
 
 def map_column_roles(columns):
     """
@@ -92,13 +97,18 @@ def map_column_roles(columns):
         for orig_col, norm_col in normalized_cols.items():
             if role == 'cost' and any(exc in norm_col for exc in NON_COST_KEYWORDS):
                 continue
-            if norm_col in syn_list:
+            if role == 'sales' and any(exc in norm_col for exc in NON_SALES_KEYWORDS):
+                continue
+            syn_norm = [s.replace('_', ' ') for s in syn_list]
+            if norm_col in syn_list or norm_col in syn_norm:
                 matched_col = orig_col
                 break
         # 2. Substring match check if exact match not found
         if not matched_col:
             for orig_col, norm_col in normalized_cols.items():
                 if role == 'cost' and any(exc in norm_col for exc in NON_COST_KEYWORDS):
+                    continue
+                if role == 'sales' and any(exc in norm_col for exc in NON_SALES_KEYWORDS):
                     continue
                 for syn in syn_list:
                     if len(syn) >= 4 and syn in norm_col:
@@ -110,6 +120,149 @@ def map_column_roles(columns):
             mapped[role] = matched_col
 
     return mapped
+
+def get_column_mappings_with_confidence(columns_or_df) -> List[Dict[str, Any]]:
+    """
+    Intelligently maps uploaded spreadsheet columns to business semantic concepts
+    with multi-factor confidence scoring, validation reasoning, and data type analysis.
+    
+    Confidence scoring:
+    - 0.98: Exact match to standard business entity synonym
+    - 0.86: Strong token/substring match to recognized business entity matrix
+    - 0.75: Data-type heuristic match (e.g. ISO datetime series)
+    - 0.00: Unmapped arbitrary column
+    """
+    if isinstance(columns_or_df, pd.DataFrame):
+        cols = list(columns_or_df.columns)
+        df_ref = columns_or_df
+    elif hasattr(columns_or_df, '__iter__'):
+        cols = list(columns_or_df)
+        df_ref = None
+    else:
+        return []
+
+    mappings = []
+    mapped_roles = map_column_roles(cols)
+    role_to_col = {v: k for k, v in mapped_roles.items()}
+
+    for col in cols:
+        col_str = str(col).strip()
+        norm_col = col_str.lower().replace('_', ' ')
+        
+        inferred_type = "text"
+        if df_ref is not None and len(df_ref) > 0:
+            s = df_ref[col]
+            if pd.to_numeric(s, errors='coerce').notnull().sum() > (len(df_ref) * 0.7):
+                inferred_type = "numeric"
+            elif pd.to_datetime(s, errors='coerce').notnull().sum() > (len(df_ref) * 0.6):
+                inferred_type = "date"
+        
+        matched_role = role_to_col.get(col)
+        
+        if matched_role:
+            syn_list = SYNONYMS.get(matched_role, [])
+            syn_norm_set = set(s.lower().replace('_', ' ').strip() for s in syn_list) | set(s.lower().strip() for s in syn_list)
+            if norm_col in syn_norm_set or col_str.lower() in syn_norm_set:
+                confidence = 0.98
+                reason = f"Exact match with standard business entity synonym for '{matched_role}'."
+            else:
+                confidence = 0.86
+                reason = f"High-confidence token and substring match for business role '{matched_role}'."
+            status = "validated"
+        else:
+            if inferred_type == "date" and 'date' not in mapped_roles.values():
+                matched_role = "date"
+                confidence = 0.75
+                reason = "Detected ISO or datetime timestamp patterns in column records."
+                status = "validated"
+            else:
+                matched_role = "unmapped"
+                confidence = 0.0
+                reason = "Column does not match recognized catalogue, pricing, inventory, or sales matrices."
+                status = "unmapped"
+
+        mappings.append({
+            "source_column": col_str,
+            "suggested_field": matched_role,
+            "confidence": confidence,
+            "reason": reason,
+            "validation_status": status,
+            "data_type": inferred_type
+        })
+
+    return mappings
+
+
+def compute_descriptive_statistics(series_or_list) -> Dict[str, Any]:
+    """
+    Computes mathematically rigorous descriptive statistical metrics for a numeric series.
+    Formulas & conventions:
+    - Variance: sample variance s^2 with Bessel's correction (ddof=1)
+    - Standard Deviation: sample standard deviation s (ddof=1)
+    - Quartiles: linear interpolation (Q1 = 25th percentile, Q2 = median, Q3 = 75th percentile)
+    - Interquartile Range (IQR): Q3 - Q1
+    - Outliers: Tukey's method (points < Q1 - 1.5*IQR or > Q3 + 1.5*IQR)
+    - Skewness: sample skewness (Fisher-Pearson coefficient)
+    - Kurtosis: Fisher's excess kurtosis (normal distribution = 0)
+    """
+    s = pd.to_numeric(pd.Series(series_or_list), errors='coerce')
+    clean = s.dropna()
+    n = len(clean)
+    null_cnt = int(s.isnull().sum())
+    
+    if n == 0:
+        return {
+            "count": 0, "null_count": null_cnt, "mean": None, "median": None,
+            "mode": None, "min": None, "max": None, "range": None,
+            "variance": 0.0, "std": 0.0, "q25": None, "median_q50": None,
+            "q75": None, "iqr": None, "p10": None, "p90": None,
+            "skewness": 0.0, "kurtosis": 0.0, "outlier_count": 0, "sum": 0.0
+        }
+    
+    mean_val = float(clean.mean())
+    median_val = float(clean.median())
+    mode_series = clean.mode()
+    mode_val = float(mode_series.iloc[0]) if not mode_series.empty else None
+    min_val = float(clean.min())
+    max_val = float(clean.max())
+    range_val = float(max_val - min_val)
+    var_val = float(clean.var(ddof=1)) if n > 1 else 0.0
+    std_val = float(clean.std(ddof=1)) if n > 1 else 0.0
+    q25 = float(clean.quantile(0.25))
+    q75 = float(clean.quantile(0.75))
+    iqr = float(q75 - q25)
+    p10 = float(clean.quantile(0.10))
+    p90 = float(clean.quantile(0.90))
+    skew_val = float(clean.skew()) if n >= 3 else 0.0
+    kurt_val = float(clean.kurt()) if n >= 4 else 0.0
+    
+    low_b = q25 - 1.5 * iqr
+    high_b = q75 + 1.5 * iqr
+    outlier_cnt = int(((clean < low_b) | (clean > high_b)).sum())
+    
+    return {
+        "count": n,
+        "null_count": null_cnt,
+        "mean": round(mean_val, 4),
+        "median": round(median_val, 4),
+        "mode": round(mode_val, 4) if mode_val is not None else None,
+        "min": round(min_val, 4),
+        "max": round(max_val, 4),
+        "range": round(range_val, 4),
+        "variance": round(var_val, 4),
+        "std": round(std_val, 4),
+        "q25": round(q25, 4),
+        "median_q50": round(median_val, 4),
+        "q75": round(q75, 4),
+        "iqr": round(iqr, 4),
+        "p10": round(p10, 4),
+        "p90": round(p90, 4),
+        "skewness": round(skew_val, 4),
+        "kurtosis": round(kurt_val, 4),
+        "outlier_count": outlier_cnt,
+        "sum": round(float(clean.sum()), 4)
+    }
+
 
 def classify_dataset(data_or_roles, row_count=0, is_pdf=False):
     """
@@ -339,6 +492,8 @@ def audit_data_quality(df, mapped_roles):
 
     return {
         "score": score,
+        "overall_score": score,
+        "issue_count": len(issues),
         "grade": grade,
         "missing_cells_count": total_missing,
         "duplicate_rows_count": dup_count,
@@ -368,8 +523,14 @@ def profile_columns(df):
         null_pct = round((null_count / total) * 100, 1) if total > 0 else 0
         unique_count = int(series.nunique(dropna=True))
 
+        # Check boolean before numeric
+        is_bool = (
+            (series.dtype == bool or series.dtype == 'bool') or
+            (unique_count <= 2 and series.dropna().isin([True, False, 'True', 'False', 'true', 'false', 1, 0]).all())
+        )
+
         # Check numeric
-        numeric_series = pd.to_numeric(series, errors='coerce')
+        numeric_series = pd.to_numeric(series, errors='coerce').astype(float) if not is_bool else pd.Series(dtype=float)
         valid_numeric_count = int(numeric_series.notnull().sum())
 
         if valid_numeric_count > 0 and (valid_numeric_count / (total - null_count + 1e-9)) > 0.7:
@@ -383,18 +544,44 @@ def profile_columns(df):
             var_val = round(float(clean_num.var()), 2) if len(clean_num) > 1 else 0.0
             q25_val = round(float(clean_num.quantile(0.25)), 2) if len(clean_num) > 0 else None
             q75_val = round(float(clean_num.quantile(0.75)), 2) if len(clean_num) > 0 else None
+            
+            mode_s = clean_num.mode()
+            mode_val = round(float(mode_s.iloc[0]), 2) if not mode_s.empty else None
+            min_val = round(float(clean_num.min()), 2) if not clean_num.empty else None
+            max_val = round(float(clean_num.max()), 2) if not clean_num.empty else None
+            range_val = round(float(max_val - min_val), 2) if (min_val is not None and max_val is not None) else None
+            iqr_val = round(float(q75_val - q25_val), 2) if (q75_val is not None and q25_val is not None) else None
+            skew_val = round(float(clean_num.skew()), 3) if len(clean_num) >= 3 else 0.0
+            kurt_val = round(float(clean_num.kurt()), 3) if len(clean_num) >= 4 else 0.0
+            p10_val = round(float(clean_num.quantile(0.10)), 2) if len(clean_num) > 0 else None
+            p90_val = round(float(clean_num.quantile(0.90)), 2) if len(clean_num) > 0 else None
+
+            if q25_val is not None and q75_val is not None and iqr_val is not None:
+                low_b = q25_val - 1.5 * iqr_val
+                high_b = q75_val + 1.5 * iqr_val
+                outlier_count = int(((clean_num < low_b) | (clean_num > high_b)).sum())
+            else:
+                outlier_count = 0
 
             stats = {
                 "count": valid_numeric_count,
                 "null_count": null_count,
-                "min": round(float(clean_num.min()), 2) if not clean_num.empty else None,
-                "max": round(float(clean_num.max()), 2) if not clean_num.empty else None,
+                "min": min_val,
+                "max": max_val,
+                "range": range_val,
                 "mean": round(float(clean_num.mean()), 2) if not clean_num.empty else None,
                 "median": round(float(clean_num.median()), 2) if not clean_num.empty else None,
+                "mode": mode_val,
                 "std": std_val,
                 "variance": var_val,
                 "q25": q25_val,
                 "q75": q75_val,
+                "iqr": iqr_val,
+                "skewness": skew_val,
+                "kurtosis": kurt_val,
+                "p10": p10_val,
+                "p90": p90_val,
+                "outlier_count": outlier_count,
                 "sum": round(float(clean_num.sum()), 2) if not clean_num.empty else None
             }
         elif pd.to_datetime(series, errors='coerce').notnull().sum() > (total * 0.6):
@@ -2127,7 +2314,7 @@ def export_report_to_html(report_data):
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>VANTIQ Business Intelligence Report - {fn}</title>
+    <title>SARTHI Business Intelligence Report - {fn}</title>
     <style>
         body {{
             background: #030811;
@@ -2186,12 +2373,12 @@ def export_report_to_html(report_data):
 <body>
     <div class="report-header">
         <div>
-            <h1 class="brand-title">VANTIQ BUSINESS INTELLIGENCE DOSSIER</h1>
-            <div class="meta-tag">VANTIQ QUANTUM ANALYTICS // SOURCE: {fn} // GENERATED: {ts}</div>
+            <h1 class="brand-title">SARTHI BUSINESS INTELLIGENCE DOSSIER</h1>
+            <div class="meta-tag">SARTHI BUSINESS INTELLIGENCE // SOURCE: {fn} // GENERATED: {ts}</div>
         </div>
         <div style="text-align: right;">
             <div style="color: #ffaa00; font-weight: 700;">{cat.upper()}</div>
-            <div class="meta-tag">VANTIQ TACTICAL ANALYTICS</div>
+            <div class="meta-tag">SARTHI TACTICAL ANALYTICS</div>
         </div>
     </div>
 
@@ -2232,7 +2419,7 @@ def export_report_to_html(report_data):
     {unavail_html}
 
     <footer style="text-align: center; color: #628ea6; font-size: 0.75rem; border-top: 1px solid rgba(0,240,255,0.1); padding-top: 16px;">
-        CONFIDENTIAL BUSINESS INTEL // PROCESSED LOCALLY BY VANTIQ ENGINE
+        CONFIDENTIAL BUSINESS INTEL // PROCESSED LOCALLY BY SARTHI ENGINE
     </footer>
 </body>
 </html>
@@ -2243,7 +2430,7 @@ def export_report_to_csv(report_data):
     Generates a consolidated CSV string containing dataset overview, stats, and findings.
     """
     lines = []
-    lines.append("VANTIQ BUSINESS INTELLIGENCE REPORT")
+    lines.append("SARTHI BUSINESS INTELLIGENCE REPORT")
     lines.append(f"File Name,{report_data.get('file_name', '')}")
     lines.append(f"File Type,{report_data.get('file_type', '')}")
     lines.append(f"Generated Timestamp,{report_data.get('timestamp', '')}")

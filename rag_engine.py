@@ -867,6 +867,23 @@ def answer_document_query(
         }
 
     chosen_text = " ".join([bs[1] for bs in best_sentences[:2]])
+
+    # Prevent raw spreadsheet header or column chunk dumps from being displayed as conversational answers
+    is_raw_sheet_dump = (
+        any(h in chosen_text for h in ["Columns:", "Sheet: Sheet", "Document:"]) and
+        not any(k in query.lower() for k in ["column", "columns", "sheet", "sheets"])
+    )
+    if is_raw_sheet_dump:
+        return {
+            "success": True,
+            "has_sufficient_evidence": False,
+            "answer": "The indexed document does not contain qualitative text for this query. Structured quantitative queries are processed by SARTHI's analytical intelligence engine.",
+            "citations": [],
+            "retrieved_chunks": [],
+            "confidence": 0.0,
+            "source": "rag_no_evidence"
+        }
+
     cit_str = top_chunk["citation"]
     deterministic_answer = f"{chosen_text} {cit_str}"
 
