@@ -2,337 +2,407 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>SARTHI — AI-Powered Business Intelligence Assistant</title>
-    <meta name="description" content="VANTIQ: AI-Powered Business Intelligence Assistant for product pricing, inventory ledger, financial analytics, and natural-language intelligence. Your Business. Your Data. Your Intelligence.">
+    <meta name="description" content="SARTHI: Premium Conversational AI Business Intelligence Platform. Ask questions, explore insights, inspect inventory, and make informed decisions.">
+    <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
-    <link rel="apple-touch-icon" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="sarthi-app-body">
     <div class="hud-overlay"></div>
-    <div class="scanlines"></div>
 
     <header class="hud-header">
         <div class="header-left">
-            <div class="reactor-mini">
-                <img src="/UI/powersource.gif" alt="Arc Reactor" class="mini-arc" id="miniArc">
+            <button type="button" class="sidebar-toggle-btn" id="toggleLeftSidebarBtn" onclick="toggleLeftSidebar()" title="Toggle Operations & Conversations (Ctrl+[)" aria-label="Toggle Operations" aria-expanded="false" aria-controls="leftPanel">
+                <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M9 3v18"></path></svg>
+                <span class="toggle-btn-label">OPERATIONS</span>
+            </button>
+            <button type="button" class="header-new-chat-btn" id="btnNewChatHeader" onclick="startNewConversation()" title="Start New Chat">
+                <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                <span>NEW CHAT</span>
+            </button>
+            <div class="sarthi-brand-logo-wrap" onclick="startNewConversation()" title="Return to SARTHI Home">
+                <img src="/sarthi-logo.png" alt="SARTHI Logo" class="sarthi-header-logo" id="sarthiHeaderLogo">
             </div>
-            <div class="brand">
-                <h1 class="logo-text">VANTIQ</h1>
-                <span class="sub-text">AI BUSINESS INTELLIGENCE // YOUR BUSINESS. YOUR DATA. YOUR INTELLIGENCE.</span>
-            </div>
-        </div>
-
-        <div class="header-center">
-            <div class="status-badge" id="systemStatusBadge">
-                <span class="status-dot"></span>
-                <span id="statusText">SYSTEM ONLINE</span>
+            <div class="brand" onclick="startNewConversation()" title="Return to SARTHI Home">
+                <h1 class="logo-text">SARTHI</h1>
+                <span class="sub-text">AI-POWERED BUSINESS INTELLIGENCE</span>
             </div>
         </div>
 
         <div class="header-right">
-            <div class="telemetry-chip">
-                <span class="chip-label">SYSTEM DATE</span>
-                <span class="chip-value" id="hudDate">-- / -- / ----</span>
+            <div class="status-badge" id="systemStatusBadge">
+                <span class="status-dot"></span>
+                <span id="statusText">SYSTEM ONLINE</span>
             </div>
-            <div class="telemetry-chip">
-                <span class="chip-label">STARK TIME</span>
-                <span class="chip-value highlight" id="hudTime">--:--:--</span>
-            </div>
+            <button type="button" class="sidebar-toggle-btn" id="toggleRightSidebarBtn" onclick="toggleRightSidebar()" title="Toggle Tactical Intel (Ctrl+])" aria-label="Toggle Tactical Intel" aria-expanded="false" aria-controls="rightPanel">
+                <span class="toggle-btn-label">TACTICAL INTEL</span>
+                <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M15 3v18"></path></svg>
+            </button>
         </div>
     </header>
 
-    <main class="hud-main">
-        <!-- Left Panel: Navigation & Telemetry -->
-        <aside class="panel left-panel">
+    <main class="hud-main mode-landing" id="mainContainer">
+        <!-- Left Panel: Conversations & Business Tools (Collapsible) -->
+        <aside class="panel left-panel" id="leftPanel" role="region" aria-label="Conversations and Operations Console">
             <div class="panel-header">
-                <h2>OPERATIONS CONSOLE</h2>
-                <span class="panel-tag">ENTERPRISE</span>
+                <div class="panel-header-title-group">
+                    <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M9 3v18"></path></svg>
+                    <h2>OPERATIONS &amp; CHATS</h2>
+                </div>
+                <div class="panel-header-actions">
+                    <span class="panel-tag">ENTERPRISE</span>
+                    <button type="button" class="panel-close-btn" onclick="toggleLeftSidebar(false)" title="Close Operations Console (Esc)" aria-label="Close Operations Console">
+                        <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
             </div>
 
-            <!-- Organized Enterprise Navigation -->
-            <nav class="nav-sidebar-menu" aria-label="Main Navigation">
+            <!-- Primary Sidebar Actions -->
+            <div class="sidebar-top-actions">
+                <button type="button" class="sidebar-new-chat-btn" id="btnNewChatSidebar" onclick="startNewConversation()">
+                    <svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                    <span>New Conversation</span>
+                </button>
+                <div class="sidebar-search-box">
+                    <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="chatHistorySearch" placeholder="Search conversations..." oninput="onSearchChatHistory(this.value)">
+                </div>
+            </div>
+
+            <!-- Conversation History Section -->
+            <div class="sidebar-history-wrapper">
+                <div class="sidebar-sub-heading">
+                    <span>RECENT CONVERSATIONS</span>
+                    <button type="button" class="clear-history-link" onclick="clearAllChatHistory()" title="Clear chat history">CLEAR</button>
+                </div>
+                <div class="conversation-history-list" id="conversationHistoryList">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Business Intelligence Navigation -->
+            <nav class="nav-sidebar-menu" aria-label="Business Intelligence Navigation">
                 <div class="nav-group">
-                    <span class="nav-group-title">OVERVIEW</span>
-                    <button class="action-btn" id="btnSystemStatus" onclick="showSystemStatus()" title="Display Real-Time Subsystem Telemetry">
-                        <span class="btn-icon">⚡</span>
-                        <span class="btn-label">SYSTEM STATUS</span>
-                    </button>
+                    <span class="nav-group-title">BUSINESS TOOLS</span>
                     <button class="action-btn" id="btnBusinessInsights" onclick="openBusinessInsights()" title="Open Business Intelligence & Analytics Dossier">
-                        <span class="btn-icon">📊</span>
+                        <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>
                         <span class="btn-label">BUSINESS INSIGHTS</span>
                     </button>
-                </div>
-
-                <div class="nav-group">
-                    <span class="nav-group-title">OPERATIONS</span>
                     <button class="action-btn" id="btnCatalogue" onclick="openCatalogueModal()" title="Open Product Catalogue & Inventory Management">
-                        <span class="btn-icon">📦</span>
+                        <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span>
                         <span class="btn-label">PRODUCT CATALOGUE</span>
                     </button>
-                    <button class="action-btn" id="btnSuppliersPurchases" onclick="openSuppliersPurchases()" title="Open Supplier Directory & Procurement Ledger">
-                        <span class="btn-icon">🏢</span>
-                        <span class="btn-label">SUPPLIERS & PURCHASES</span>
-                    </button>
-                </div>
-
-                <div class="nav-group">
-                    <span class="nav-group-title">INTELLIGENCE</span>
                     <button class="action-btn" id="btnDocumentLibrary" onclick="openDocumentLibrary()" title="Open Saved Document & Dataset Library">
-                        <span class="btn-icon">📁</span>
+                        <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg></span>
                         <span class="btn-label">DOCUMENT LIBRARY</span>
+                    </button>
+                    <button class="action-btn" id="btnSavedDatasets" onclick="toggleRightSidebar(true)" title="Open Saved Data Library in Tactical Intel">
+                        <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg></span>
+                        <span class="btn-label">SAVED DATASETS</span>
+                    </button>
+                    <button class="action-btn" id="btnBusinessReports" onclick="launchReport()" title="Launch Automated Business Report">
+                        <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span>
+                        <span class="btn-label">BUSINESS REPORTS</span>
                     </button>
                 </div>
             </nav>
 
-            <!-- Persistent Catalogue & Inventory Summary Telemetry -->
-            <div class="catalogue-hud-card" id="catalogueHudCard">
-                <div class="catalogue-hud-header">
-                    <span class="cat-hud-title">PRODUCT & STOCK TELEMETRY</span>
-                    <button type="button" class="cat-open-btn" onclick="openCatalogueModal()" title="Open Product Catalogue">MANAGE ↗</button>
-                </div>
-                <div class="cat-hud-grid">
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">ACTIVE PRODS</span>
-                        <span class="cat-stat-val cyan" id="hudActiveProdsVal">0</span>
+            <!-- Collapsible System Telemetry (Preserves IDs for background telemetry) -->
+            <details class="sidebar-telemetry-accordion">
+                <summary class="telemetry-accordion-summary">
+                    <span>SYSTEM &amp; STOCK TELEMETRY</span>
+                    <svg class="lucide-icon icon-xs chevron-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </summary>
+                <div class="telemetry-accordion-body">
+                    <div class="catalogue-hud-card" id="catalogueHudCard">
+                        <div class="catalogue-hud-header">
+                            <span class="cat-hud-title">PRODUCT &amp; STOCK TELEMETRY</span>
+                            <button type="button" class="cat-open-btn" onclick="openCatalogueModal()" title="Open Product Catalogue">MANAGE <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></button>
+                        </div>
+                        <div class="cat-hud-grid">
+                            <div class="cat-hud-stat">
+                                <span class="cat-stat-label">ACTIVE PRODS</span>
+                                <span class="cat-stat-val cyan" id="hudActiveProdsVal">0</span>
+                            </div>
+                            <div class="cat-hud-stat">
+                                <span class="cat-stat-label">STOCK UNITS</span>
+                                <span class="cat-stat-val" id="hudTotalStockVal">0</span>
+                            </div>
+                            <div class="cat-hud-stat">
+                                <span class="cat-stat-label">LOW STOCK</span>
+                                <span class="cat-stat-val amber" id="hudLowStockVal">0</span>
+                            </div>
+                            <div class="cat-hud-stat">
+                                <span class="cat-stat-label">OUT OF STOCK</span>
+                                <span class="cat-stat-val red" id="hudOutOfStockVal">0</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">STOCK UNITS</span>
-                        <span class="cat-stat-val" id="hudTotalStockVal">0</span>
-                    </div>
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">LOW STOCK</span>
-                        <span class="cat-stat-val amber" id="hudLowStockVal">0</span>
-                    </div>
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">OUT OF STOCK</span>
-                        <span class="cat-stat-val red" id="hudOutOfStockVal">0</span>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Local AI Neural Core (Ollama qwen3:4b-instruct) Telemetry -->
-            <div class="catalogue-hud-card local-ai-hud-card" id="localAiHudCard">
-                <div class="catalogue-hud-header">
-                    <span class="cat-hud-title"><span class="ai-pulse-dot" id="llmPulseDot">●</span> LOCAL AI NEURAL CORE</span>
-                    <span class="llm-model-badge" id="llmModelBadge">qwen3:4b</span>
-                </div>
-                <div class="cat-hud-grid">
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">AI STATUS</span>
-                        <span class="cat-stat-val cyan" id="hudLlmStatusVal">READY</span>
+                    <div class="gauge-container">
+                        <div class="gauge-header-title">SYSTEM HARDWARE</div>
+                        <div class="gauge-item">
+                            <div class="gauge-header">
+                                <span>CPU LOAD</span>
+                                <span id="cpuVal">0%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="bar-fill" id="cpuBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="gauge-item">
+                            <div class="gauge-header">
+                                <span>QUANTUM MEMORY</span>
+                                <span id="ramVal">0%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="bar-fill cyan" id="ramBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="gauge-item">
+                            <div class="gauge-header">
+                                <span>BATTERY POWER</span>
+                                <span id="batteryVal">Detecting...</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="bar-fill gold" id="batteryBar" style="width: 100%"></div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">LATENCY</span>
-                        <span class="cat-stat-val" id="hudLlmLatencyVal">--</span>
-                    </div>
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">INFERENCE</span>
-                        <span class="cat-stat-val" id="hudLlmModeVal">LOCAL</span>
-                    </div>
-                    <div class="cat-hud-stat">
-                        <span class="cat-stat-label">CLOUD APIS</span>
-                        <span class="cat-stat-val green" id="hudLlmCloudVal">0 (OFFLINE)</span>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Hardware Telemetry Gauges -->
-            <div class="gauge-container">
-                <div class="gauge-header-title">SYSTEM HARDWARE</div>
-                <div class="gauge-item">
-                    <div class="gauge-header">
-                        <span>CPU LOAD</span>
-                        <span id="cpuVal">0%</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="bar-fill" id="cpuBar" style="width: 0%"></div>
+                    <div class="hud-radar-box">
+                        <div class="radar-label" id="radarTelemetryLabel">SYSTEM ENGINE: ONLINE</div>
                     </div>
                 </div>
-
-                <div class="gauge-item">
-                    <div class="gauge-header">
-                        <span>QUANTUM MEMORY</span>
-                        <span id="ramVal">0%</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="bar-fill cyan" id="ramBar" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <div class="gauge-item">
-                    <div class="gauge-header">
-                        <span>ARC REACTOR (BATTERY)</span>
-                        <span id="batteryVal">Detecting...</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="bar-fill gold" id="batteryBar" style="width: 100%"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="hud-radar-box">
-                <img src="/UI/ringJar.gif" alt="Rotating Ring" class="hud-gif ring-radar">
-                <div class="radar-label" id="radarTelemetryLabel">SYSTEM ENGINE: ONLINE</div>
-            </div>
+            </details>
         </aside>
 
-        <!-- Center Core: AI Workspace & Hero Deck -->
-        <section class="center-core">
-            <div class="center-hero-workspace">
-                <!-- Left Side: Interactive Arc Reactor & Visual Hero -->
-                <div class="hologram-stage">
-                    <div class="reactor-interaction-col">
-                        <div class="holo-ring">
-                            <img src="/UI/circle.gif" alt="Target Ring" class="circle-hud">
-                        </div>
-                        <div class="arc-core-interactive" id="coreTrigger" onclick="toggleVoiceListening()" title="Click to engage voice listening">
-                            <img src="/UI/powersource.gif" alt="Central Arc Reactor" class="central-reactor" id="mainReactor">
-                            <div class="core-glow"></div>
-                            <div class="pulse-indicator" id="voiceIndicator">CLICK TO ENGAGE SPEECH</div>
-                        </div>
+        <!-- Center Core: Conversational AI Workspace -->
+        <section class="center-core" id="centerCore">
+            <!-- STATE A: Premium Default Landing Page -->
+            <div class="landing-hero-container" id="landingHeroContainer">
+                <div class="landing-welcome-section">
+                    <div class="landing-logo-emblem">
+                        <img src="/sarthi-logo.png" alt="SARTHI" class="landing-emblem-img">
                     </div>
-
-                    <div class="ironman-avatar-box">
-                        <img src="/UI/ironman1.gif" alt="Iron Man Armor" class="ironman-armor">
-                    </div>
+                    <h1 class="landing-welcome-title">What would you like to know?</h1>
+                    <p class="landing-welcome-sub">Your business intelligence, simplified. Ask questions, explore insights, and make informed decisions with SARTHI.</p>
                 </div>
 
-                <!-- Right Side: Business Data Import Module (Relocated to Upper Center Workspace) -->
-                <div class="import-module-box" id="importModuleBox">
-                    <div class="import-header-row">
-                        <span class="import-title">BUSINESS DATA IMPORT</span>
-                        <div class="format-badges">
-                            <span class="format-badge">XLSX</span>
-                            <span class="format-badge">XLS</span>
-                            <span class="format-badge">CSV</span>
-                            <span class="format-badge">PDF</span>
-                        </div>
-                    </div>
-                    <p class="import-desc">Import business data from Excel spreadsheets, CSV files, and PDF documents.</p>
-
-                    <!-- Drag & Drop Zone -->
-                    <div class="drop-zone" id="dropZone">
-                        <div class="drop-zone-content">
-                            <span class="drop-icon">📁</span>
-                            <div class="drop-text-col">
-                                <span class="drop-text">Drag & drop files here or <span class="browse-link">browse</span></span>
-                                <span class="drop-subtext">Max size: 10 MB (XLSX, XLS, CSV, PDF)</span>
-                            </div>
-                        </div>
-                        <input type="file" id="businessFileInput" accept=".xlsx,.xls,.csv,.pdf" class="hidden-file-input">
-                    </div>
-
-                    <!-- Selected File Metadata Card (Initially hidden) -->
-                    <div class="selected-file-card" id="selectedFileCard" style="display: none;">
-                        <div class="file-icon-badge" id="fileTypeIcon">📄</div>
-                        <div class="file-info-col">
-                            <span class="selected-file-name" id="selectedFileName">filename.xlsx</span>
-                            <div class="selected-file-meta">
-                                <span id="selectedFileSize">0 KB</span>
-                                <span class="meta-dot">•</span>
-                                <span class="status-indicator-text" id="selectedFileStatus">Ready to import</span>
-                            </div>
-                        </div>
-                        <button type="button" class="remove-file-btn" id="removeFileBtn" title="Remove File" onclick="cancelFileSelection()">✕</button>
-                    </div>
-
-                    <!-- Actions Row -->
-                    <div class="import-actions-row">
-                        <button type="button" class="import-btn" id="importBtn" onclick="submitDataImport()" disabled>
-                            <span class="import-btn-text">IMPORT DATA</span>
-                        </button>
-                        <button type="button" class="cancel-btn" id="cancelBtn" onclick="cancelFileSelection()" style="display: none;">
-                            CANCEL
-                        </button>
-                    </div>
-
-                    <!-- Processing Spinner (Initially hidden) -->
-                    <div class="import-processing" id="importProcessing" style="display: none;">
-                        <div class="tactical-spinner"></div>
-                        <span class="processing-text">EXTRACTING TABULAR & TEXT MATRIX...</span>
-                    </div>
-
-                    <!-- Error Banner (Initially hidden) -->
-                    <div class="import-error-banner" id="importErrorBanner" style="display: none;">
-                        <span class="error-icon">⚠️</span>
-                        <span class="error-text" id="importErrorText">An error occurred.</span>
-                    </div>
-
-                    <!-- Extracted Data Preview & Summary Result Area (Initially hidden) -->
-                    <div class="import-result-viewport" id="importResultViewport" style="display: none;">
-                        <div class="result-header">
-                            <span class="result-title">EXTRACTION PREVIEW</span>
-                            <div class="result-header-btns">
-                                <button type="button" class="map-catalogue-btn" id="mapCatalogueBtn" onclick="openSpreadsheetMappingModal()">📦 MAP TO PRODUCT CATALOGUE</button>
-                                <button type="button" class="launch-bi-btn" id="launchReportBtn" onclick="launchReport()">⚡ LAUNCH REPORT</button>
-                                <button type="button" class="close-preview-btn" onclick="closeImportPreview()">CLOSE</button>
-                            </div>
-                        </div>
-                        <div class="result-summary-bar" id="resultSummaryBar">
-                            <!-- Summary metrics inserted by JS -->
-                        </div>
-                        <div class="result-sheets-tabs" id="resultSheetsTabs">
-                            <!-- Sheet selector tabs inserted by JS -->
-                        </div>
-                        <div class="result-preview-content" id="resultPreviewContent">
-                            <!-- Extracted table or text inserted by JS -->
-                        </div>
-                    </div>
+                <!-- Landing Composer Slot -->
+                <div class="landing-composer-slot" id="landingComposerSlot">
+                    <!-- The Prompt Composer is mounted here in State A -->
                 </div>
             </div>
 
-            <!-- Voice & Terminal Console -->
-            <div class="terminal-container">
-                <div class="terminal-header">
-                    <span class="term-title">> SARTHI NEURAL CONSOLE</span>
-                    <span class="term-status" id="listenerStatus">VOICE ENGINE READY</span>
-                </div>
 
-                <div class="terminal-log" id="terminalLog">
-                    <div class="log-entry system">[SYSTEM INIT] SARTHI Neural Core initialized successfully.</div>
-                    <div class="log-entry system">[SYSTEM INIT] Connecting to local intelligence telemetry...</div>
-                    <div class="log-entry jarvis">[SARTHI] Greetings. SARTHI is online and ready for your business inquiries. Type your business question or use the microphone to speak.</div>
-                </div>
-
-                <form class="command-bar" id="commandForm" onsubmit="handleCommandSubmit(event)" title="Type your business question or use the microphone to speak.">
-                    <span class="prompt-arrow">></span>
-                    <input type="text" id="commandInput" placeholder="Ask SARTHI about inventory, product pricing, suppliers, sales, or business performance..." title="Type your business question or use the microphone to speak." autocomplete="off">
-                    <button type="button" class="mic-toggle-btn" id="micBtn" onclick="toggleVoiceListening()" title="Type your business question or use the microphone to speak.">
-                        <span id="micIcon">🎙️</span>
-                    </button>
-                    <button type="submit" class="send-btn" id="sendBtn">EXECUTE</button>
-                </form>
-                <div class="console-guidance-bar" id="consoleGuidanceBar">
-                    <span class="guidance-helper-label" title="Type your business question or use the microphone to speak.">
-                        <span class="guidance-icon">💡</span> Type your business question or use the microphone to speak.
-                    </span>
-                    <div class="guidance-example-rotator" id="guidanceExampleRotator">
-                        <span class="example-rotator-label">EXAMPLES:</span>
-                        <span class="example-rotator-query" id="exampleRotatorQuery" onclick="setConsoleQuery(this.textContent)" title="Click to insert example query">Which products are currently low in stock?</span>
+            <!-- STATE B: Active Conversation Workspace -->
+            <div class="conversation-workspace" id="conversationWorkspace" style="display: none;">
+                <!-- Conversation Header Bar -->
+                <div class="chat-workspace-header" id="chatWorkspaceHeader">
+                    <div class="chat-title-info">
+                        <div class="chat-model-badge">
+                            <span class="pulse-dot"></span>
+                            <span>SARTHI Core</span>
+                        </div>
+                        <h2 class="chat-current-title" id="activeChatTitle">Business Intelligence Query</h2>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button type="button" class="chat-action-btn" onclick="startNewConversation()" title="Start New Chat">
+                            <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                            <span>New Chat</span>
+                        </button>
                     </div>
                 </div>
+
+                <!-- Scrollable Conversation Stream -->
+                <div class="conversation-stream" id="conversationStream">
+                    <!-- Messages dynamically rendered here -->
+                </div>
+
+                <!-- Live Thinking Indicator (Inside conversation area) -->
+                <div class="chat-thinking-indicator" id="chatThinkingIndicator" style="display: none;">
+                    <div class="thinking-avatar">
+                        <img src="/sarthi-logo.png" alt="SARTHI">
+                    </div>
+                    <div class="thinking-content">
+                        <div class="thinking-dots">
+                            <span class="dot"></span>
+                            <span class="dot"></span>
+                            <span class="dot"></span>
+                        </div>
+                        <span class="thinking-label">SARTHI is analyzing business data and telemetry...</span>
+                    </div>
+                </div>
+
+                <!-- Bottom Composer Slot -->
+                <div class="bottom-composer-slot" id="bottomComposerSlot">
+                    <!-- The Prompt Composer is mounted here in State B -->
+                </div>
+            </div>
+
+            <!-- The Unified Prompt Composer Component (Portable between Landing and Bottom slots) -->
+            <div class="prompt-composer-container" id="promptComposerContainer">
+                <form class="composer-form" id="commandForm" onsubmit="handleCommandSubmit(event)" title="Type your business question or use the microphone to speak.">
+                    <!-- Compact Attached File Badge (only visible when a file is selected) -->
+                    <div class="composer-attachment-pill" id="composerAttachmentPill" style="display: none;">
+                        <div class="pill-file-badge">
+                            <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        </div>
+                        <div class="pill-file-details">
+                            <span class="pill-filename" id="selectedFileName">dataset.xlsx</span>
+                            <span class="pill-filesize" id="selectedFileSize">0 KB</span>
+                            <span class="pill-status-tag" id="selectedFileStatus">Attached</span>
+                        </div>
+                        <div class="pill-actions">
+                            <button type="button" class="pill-import-action-btn" id="importBtn" onclick="submitDataImport()" title="Import into Catalogue & Ledger">IMPORT</button>
+                            <button type="button" class="pill-remove-btn" id="removeFileBtn" onclick="cancelFileSelection()" title="Remove file" aria-label="Remove file">&times;</button>
+                        </div>
+                    </div>
+
+                    <!-- Main Input Row: Auto-expanding textarea -->
+                    <div class="composer-input-row">
+                        <textarea id="commandInput" class="composer-textarea" placeholder="Ask SARTHI about your business..." rows="1" autocomplete="off" title="Ask SARTHI about inventory, sales, pricing, suppliers, or business performance..."></textarea>
+                    </div>
+
+                    <!-- Bottom Action Row: Compact Attachment, Voice Assistant & Execute Controls -->
+                    <div class="composer-action-row">
+                        <!-- Left Controls: Attachment & Voice Status Indicator -->
+                        <div class="composer-action-left">
+                            <button type="button" class="composer-btn composer-attach-btn" id="composerAttachBtn" onclick="triggerFileInput()" title="Attach Business File (.xlsx, .xls, .csv, .pdf - max 10MB)" aria-label="Attach Business File">
+                                <svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                            </button>
+                            <input type="file" id="businessFileInput" accept=".xlsx,.xls,.csv,.pdf" class="hidden-file-input">
+
+                            <!-- Polished Voice Assistant State Indicator -->
+                            <div class="voice-state-indicator state-idle" id="voiceStateIndicator" title="Voice Assistant State">
+                                <span class="voice-state-dot" id="voiceStateDot"></span>
+                                <span class="voice-state-label" id="listenerStatus">VOICE READY</span>
+                                <div class="voice-live-waves" id="voiceLiveWaves" style="display: none;">
+                                    <span class="v-wave"></span>
+                                    <span class="v-wave"></span>
+                                    <span class="v-wave"></span>
+                                    <span class="v-wave"></span>
+                                </div>
+                            </div>
+
+                            <!-- Stop Speaking Button (visible only when SARTHI is speaking) -->
+                            <button type="button" class="composer-btn stop-speaking-btn" id="stopSpeakingBtn" onclick="stopAssistantSpeaking()" title="Stop Voice Output" style="display: none;">
+                                <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="5" y="5" rx="2" ry="2"></rect></svg>
+                                <span>STOP</span>
+                            </button>
+                        </div>
+
+                        <!-- Right Controls: Microphone & Submit/Execute -->
+                        <div class="composer-action-right">
+                            <button type="button" class="composer-btn wake-word-toggle-btn" id="wakeWordToggleBtn" onclick="toggleWakeWordMode()" title="Enable Hands-Free Wake-Word Assistant (Say 'Sarthi')" aria-label="Toggle Hands-Free Wake-Word Mode">
+                                <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line><path d="M8 8a5 5 0 0 1 8 0"></path></svg>
+                                <span class="wake-btn-label">WAKE: "SARTHI"</span>
+                            </button>
+
+                            <button type="button" class="composer-btn composer-mic-btn" id="micBtn" onclick="toggleVoiceListening()" title="Speak your question (Push to talk)" aria-label="Toggle Microphone">
+                                <span id="micIcon">
+                                    <svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+                                </span>
+                            </button>
+
+                            <button type="submit" class="composer-execute-btn" id="sendBtn" title="Execute Query (Enter)" aria-label="Execute Query">
+                                <span class="execute-btn-label">EXECUTE</span>
+                                <svg class="lucide-icon icon-xs execute-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- COMPATIBILITY CONTAINER (Cleanly preserved for tests, drag-and-drop, and legacy telemetry) -->
+            <div class="sarthi-compatibility-preserve" style="display: none;" aria-hidden="true">
+                <!-- Business Data Import preservation -->
+                <div class="import-module-box" id="importModuleBox">
+                    <span class="import-title">BUSINESS DATA IMPORT</span>
+                    <div class="format-badges">
+                        <span class="format-badge">XLSX</span>
+                        <span class="format-badge">XLS</span>
+                        <span class="format-badge">CSV</span>
+                        <span class="format-badge">PDF</span>
+                    </div>
+                    <div class="drop-zone" id="dropZone">
+                        <div class="drop-zone-content">
+                            <span class="drop-icon"><svg class="lucide-icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M12 12v9"></path><path d="m16 16-4-4-4 4"></path></svg></span>
+                            <span class="drop-text">Drag & drop files here</span>
+                        </div>
+                    </div>
+                    <div class="selected-file-card" id="selectedFileCard">
+                        <div class="file-icon-badge" id="fileTypeIcon"></div>
+                    </div>
+                    <button type="button" class="cancel-btn" id="cancelBtn" onclick="cancelFileSelection()">CANCEL</button>
+                    <div class="import-processing" id="importProcessing">
+                        <div class="tactical-spinner"></div>
+                        <span class="processing-text">EXTRACTING TABULAR &amp; TEXT MATRIX...</span>
+                    </div>
+                    <div class="import-error-banner" id="importErrorBanner">
+                        <span class="error-text" id="importErrorText">An error occurred.</span>
+                    </div>
+                </div>
+
+                <!-- Legacy terminal log -->
+                <div class="terminal-log" id="terminalLog"></div>
+                <div class="console-guidance-bar" id="consoleGuidanceBar">
+                    <div class="guidance-example-rotator" id="guidanceExampleRotator">
+                        <span class="example-rotator-query" id="exampleRotatorQuery" onclick="setConsoleQuery(this.textContent)">Which products are currently low in stock?</span>
+                    </div>
+                </div>
+
+                <!-- Legacy reactor trigger -->
+                <div id="coreTrigger" onclick="toggleVoiceListening()">
+                    <div id="mainReactor"></div>
+                    <div id="voiceIndicator">CLICK TO ENGAGE SPEECH</div>
+                </div>
+            </div>
+
+            <!-- Extracted Data Preview & Mapping Drawer (Shown when data extraction is active) -->
+            <div class="import-result-viewport" id="importResultViewport" style="display: none;">
+                <div class="result-header">
+                    <span class="result-title">EXTRACTION PREVIEW</span>
+                    <div class="result-header-btns">
+                        <button type="button" class="map-catalogue-btn" id="mapCatalogueBtn" onclick="openSpreadsheetMappingModal()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg> MAP TO PRODUCT CATALOGUE</button>
+                        <button type="button" class="launch-bi-btn" id="launchReportBtn" onclick="launchReport()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> LAUNCH REPORT</button>
+                        <button type="button" class="close-preview-btn" onclick="closeImportPreview()">CLOSE</button>
+                    </div>
+                </div>
+                <div class="result-summary-bar" id="resultSummaryBar"></div>
+                <div class="result-sheets-tabs" id="resultSheetsTabs"></div>
+                <div class="result-preview-content" id="resultPreviewContent"></div>
             </div>
         </section>
 
-        <!-- Right Panel: Dynamic Intelligence Deck -->
-        <aside class="panel right-panel">
+        <!-- Right Panel: Dynamic Intelligence Deck (Collapsible) -->
+        <aside class="panel right-panel" id="rightPanel" role="region" aria-label="Tactical Intelligence Deck">
             <div class="panel-header">
-                <h2>TACTICAL INTEL</h2>
-                <span class="panel-tag">LIVE.FEED</span>
+                <div class="panel-header-title-group">
+                    <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M15 3v18"></path></svg>
+                    <h2>TACTICAL INTEL</h2>
+                </div>
+                <div class="panel-header-actions">
+                    <span class="panel-tag">LIVE.FEED</span>
+                    <button type="button" class="panel-close-btn" onclick="toggleRightSidebar(false)" title="Close Tactical Intel (Esc)" aria-label="Close Tactical Intel">
+                        <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
             </div>
 
             <!-- Dynamic Card Area -->
             <div class="intel-viewport" id="intelViewport">
                 <div class="intel-card default-card">
-                    <h3 class="card-title">STARK ARCHIVES</h3>
-                    <p class="card-desc">Select an operational module or use voice commands to access classified system intelligence.</p>
-                    
+                    <h3 class="card-title">SARTHI SYSTEM INTEL</h3>
+                    <p class="card-desc">Select an operational module or use voice commands to access real-time business intelligence.</p>
                     <div class="data-row">
                         <span class="label">OS PLATFORM:</span>
                         <span class="val" id="platformVal">Windows 11</span>
@@ -351,52 +421,86 @@
             <!-- Persistent Saved Data Library Module -->
             <div class="library-module-box" id="libraryModuleBox">
                 <div class="library-header-row">
-                    <span class="library-title">SAVED DATA LIBRARY</span>
+                    <div class="library-title-group">
+                        <svg class="library-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                        <span class="library-title">SAVED DATA LIBRARY</span>
+                    </div>
                     <span class="library-badge" id="libraryCountBadge">0 DATASETS</span>
                 </div>
                 <div class="library-toolbar">
                     <div class="search-input-wrapper">
-                        <span class="search-icon">🔍</span>
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         <input type="text" id="librarySearchInput" class="library-search-input" placeholder="Search datasets..." oninput="onLibrarySearch(this.value)">
                     </div>
                     <select id="libraryTypeFilter" class="library-filter-select" onchange="onLibraryFilter(this.value)">
                         <option value="">ALL FORMATS</option>
                         <option value="xlsx">XLSX</option>
                         <option value="xls">XLS</option>
+                        <option value="csv">CSV</option>
                         <option value="pdf">PDF</option>
                     </select>
-                    <button type="button" class="library-refresh-btn" onclick="loadSavedDatasets()" title="Reload Library">🔄</button>
+                    <button type="button" class="library-refresh-btn" onclick="loadSavedDatasets()" title="Reload Library">
+                        <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                    </button>
                 </div>
 
                 <!-- Datasets List -->
                 <div class="library-list-viewport" id="libraryListContainer">
                     <div class="library-empty-state">
-                        <span class="empty-icon">📂</span>
-                        <p class="empty-text">No saved datasets yet. Import an Excel or PDF file to begin.</p>
+                        <div class="empty-icon-wrap">
+                            <svg class="empty-illustration-svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <ellipse cx="32" cy="14" rx="20" ry="7"></ellipse>
+                                <path d="M12 14v16c0 3.87 8.95 7 20 7s20-3.13 20-7V14"></path>
+                                <path d="M12 30v16c0 3.87 8.95 7 20 7s20-3.13 20-7V30"></path>
+                                <circle cx="44" cy="44" r="10" fill="#0b172a" stroke="#16d9e8" stroke-width="1.5"></circle>
+                                <path d="M44 40v8M40 44h8" stroke="#16d9e8" stroke-width="1.5"></path>
+                            </svg>
+                        </div>
+                        <h4 class="empty-title">No datasets available</h4>
+                        <p class="empty-text">Import an Excel, CSV, or PDF file to start analyzing data with SARTHI.</p>
+                        <button type="button" class="empty-import-action" onclick="triggerFileInput()">
+                            <svg class="btn-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                            IMPORT DATASET
+                        </button>
                     </div>
                 </div>
 
                 <!-- Pagination Bar -->
                 <div class="library-pagination-row" id="libraryPaginationRow" style="display: none;">
-                    <button type="button" class="lib-page-btn" id="libPrevBtn" onclick="changeLibraryPage(-1)">◀ PREV</button>
+                    <button type="button" class="lib-page-btn" id="libPrevBtn" onclick="changeLibraryPage(-1)">
+                        <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg> PREV
+                    </button>
                     <span class="lib-page-indicator" id="libPageIndicator">PAGE 1 / 1</span>
-                    <button type="button" class="lib-page-btn" id="libNextBtn" onclick="changeLibraryPage(1)">NEXT ▶</button>
+                    <button type="button" class="lib-page-btn" id="libNextBtn" onclick="changeLibraryPage(1)">
+                        NEXT <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
                 </div>
             </div>
 
             <div class="hud-audio-wave">
-                <img src="/UI/lines1.gif" alt="Audio Waves" class="wave-gif">
+                <div class="audio-wave-visualizer">
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                    <span class="wave-bar"></span>
+                </div>
             </div>
         </aside>
+
+        <!-- Floating edge toggles removed in favor of primary top navigation -->
+
+        <!-- Overlay Drawer Backdrop for responsive mobile/tablet views -->
+        <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeAllSidebars()" aria-hidden="true"></div>
     </main>
 
-    <!-- Dedicated Business Intelligence HUD Modal -->
+<!-- Dedicated Business Intelligence HUD Modal -->
     <div class="bi-modal-overlay" id="biModal" style="display: none;">
         <div class="bi-modal-container">
             <!-- Modal Header -->
             <div class="bi-modal-header">
                 <div class="bi-header-title-group">
-                    <span class="bi-reactor-glow">⚡</span>
+                    <span class="bi-reactor-glow"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span>
                     <div>
                         <h2 class="bi-title" id="biDocTitle">BUSINESS INTELLIGENCE DOSSIER</h2>
                         <div class="bi-meta-sub">
@@ -412,7 +516,7 @@
                         <button type="button" class="export-btn" onclick="exportCurrentReport('csv')">CSV</button>
                         <button type="button" class="export-btn" onclick="exportCurrentReport('json')">JSON</button>
                     </div>
-                    <button type="button" class="bi-close-btn" onclick="closeBIModal()" title="Close Intelligence Dossier">✕</button>
+                    <button type="button" class="bi-close-btn" onclick="closeBIModal()" title="Close Intelligence Dossier"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
                 </div>
             </div>
 
@@ -451,7 +555,7 @@
             <!-- Modal Header -->
             <div class="bi-modal-header">
                 <div class="bi-header-title-group">
-                    <span class="bi-reactor-glow">📦</span>
+                    <span class="bi-reactor-glow"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span>
                     <div>
                         <h2 class="bi-title">PRODUCT CATALOGUE & INVENTORY MANAGEMENT</h2>
                         <div class="bi-meta-sub">
@@ -462,8 +566,8 @@
                 </div>
                 <div class="bi-header-actions">
                     <button type="button" class="cat-btn-primary" onclick="openAddProductModal()">+ ADD PRODUCT</button>
-                    <button type="button" class="cat-btn-secondary" onclick="loadCatalogueProducts()">🔄 REFRESH</button>
-                    <button type="button" class="bi-close-btn" onclick="closeCatalogueModal()" title="Close Catalogue">✕</button>
+                    <button type="button" class="cat-btn-secondary" onclick="loadCatalogueProducts()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> REFRESH</button>
+                    <button type="button" class="bi-close-btn" onclick="closeCatalogueModal()" title="Close Catalogue"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
                 </div>
             </div>
 
@@ -527,8 +631,8 @@
                         <option value="updated_at">Last Update</option>
                     </select>
                     <select id="catSortOrder" class="cat-select" onchange="onCatalogueSortChange()">
-                        <option value="asc">ASC (▲)</option>
-                        <option value="desc">DESC (▼)</option>
+                        <option value="asc">ASC (Low to High)</option>
+                        <option value="desc">DESC (High to Low)</option>
                     </select>
                 </div>
             </div>
@@ -561,9 +665,9 @@
 
                 <!-- Products Pagination -->
                 <div class="cat-pagination-row" id="catPaginationRow">
-                    <button type="button" class="lib-page-btn" id="catPrevBtn" onclick="changeCataloguePage(-1)">◀ PREV</button>
+                    <button type="button" class="lib-page-btn" id="catPrevBtn" onclick="changeCataloguePage(-1)"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg> PREV</button>
                     <span class="lib-page-indicator" id="catPageIndicator">PAGE 1 / 1</span>
-                    <button type="button" class="lib-page-btn" id="catNextBtn" onclick="changeCataloguePage(1)">NEXT ▶</button>
+                    <button type="button" class="lib-page-btn" id="catNextBtn" onclick="changeCataloguePage(1)">NEXT <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
                 </div>
             </div>
 
@@ -620,7 +724,7 @@
         <div class="cat-submodal-card">
             <div class="cat-submodal-header">
                 <h3 id="productFormTitle">ADD PRODUCT TO CATALOGUE</h3>
-                <button type="button" class="bi-close-btn" onclick="closeProductFormModal()">✕</button>
+                <button type="button" class="bi-close-btn" onclick="closeProductFormModal()"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
             <form id="productForm" onsubmit="handleProductFormSubmit(event)">
                 <input type="hidden" id="prodFormId">
@@ -686,7 +790,7 @@
         <div class="cat-submodal-card">
             <div class="cat-submodal-header">
                 <h3>RECORD INVENTORY STOCK MOVEMENT</h3>
-                <button type="button" class="bi-close-btn" onclick="closeStockAdjustModal()">✕</button>
+                <button type="button" class="bi-close-btn" onclick="closeStockAdjustModal()"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
             <form id="stockAdjustForm" onsubmit="handleStockAdjustSubmit(event)">
                 <input type="hidden" id="adjustProdId">
@@ -743,7 +847,7 @@
                     <h3 id="detailProdName">Product Details</h3>
                     <span class="detail-sku-badge" id="detailProdSku">SKU: ---</span>
                 </div>
-                <button type="button" class="bi-close-btn" onclick="closeProductDetailModal()">✕</button>
+                <button type="button" class="bi-close-btn" onclick="closeProductDetailModal()"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
             <div class="detail-body">
                 <!-- Financials & Margin KPI Grid -->
@@ -788,7 +892,7 @@
 
                 <!-- Price History Notice (Step 5 Groundwork) -->
                 <div class="pending-feature-banner">
-                    <span class="icon">⏳</span>
+                    <span class="icon"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></span>
                     <div>
                         <strong>HISTORICAL PRICE TRACKING: PENDING STEP 5 ARCHITECTURE</strong>
                         <p>Current active prices are recorded. Dedicated multi-version price history ledger will be unlocked in Step 5.</p>
@@ -832,7 +936,7 @@
                     <h3 id="mappingModalTitle">SYNCHRONIZE SPREADSHEET TO BUSINESS MODEL</h3>
                     <p class="mapping-subtitle">Map extracted spreadsheet/CSV columns to catalogue or business ledgers, inspect preview, and commit.</p>
                 </div>
-                <button type="button" class="bi-close-btn" onclick="closeSpreadsheetMappingModal()">✕</button>
+                <button type="button" class="bi-close-btn" onclick="closeSpreadsheetMappingModal()"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
             </div>
             <div class="mapping-body">
                 <!-- Sync Purpose Selector -->
@@ -866,7 +970,7 @@
 
                 <!-- Mapping Controls -->
                 <div class="mapping-preview-actions">
-                    <button type="button" class="cat-btn-secondary" onclick="runMappingPreview()">🔍 PREVIEW VALIDATION & COUNTS</button>
+                    <button type="button" class="cat-btn-secondary" onclick="runMappingPreview()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> PREVIEW VALIDATION & COUNTS</button>
                     <span class="mapping-hint">Preview tests rows without making changes to the database.</span>
                 </div>
 
@@ -886,7 +990,7 @@
                     <div class="mapping-errors-container" id="mappingErrorsContainer" style="display: none;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <h5 style="margin: 0;">VALIDATION ISSUES IDENTIFIED:</h5>
-                            <button type="button" class="cat-btn-secondary" style="font-size: 10px; padding: 2px 8px;" onclick="downloadMappingErrors()">⬇ DOWNLOAD ERRORS (.JSON)</button>
+                            <button type="button" class="cat-btn-secondary" style="font-size: 10px; padding: 2px 8px;" onclick="downloadMappingErrors()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> DOWNLOAD ERRORS (.JSON)</button>
                         </div>
                         <ul id="mappingErrorsList"></ul>
                     </div>
@@ -917,7 +1021,7 @@
             <div class="form-actions">
                 <button type="button" class="cat-btn-cancel" onclick="closeSpreadsheetMappingModal()">CANCEL</button>
                 <button type="button" class="cat-btn-submit" id="commitImportBtn" onclick="commitSpreadsheetImport()" disabled>
-                    ⚡ CONFIRM & COMMIT TO CATALOGUE
+                    <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> CONFIRM & COMMIT TO CATALOGUE
                 </button>
             </div>
         </div>
@@ -925,7 +1029,7 @@
 
     <footer class="hud-footer">
         <div class="footer-left">
-            <span id="footerRepo">REPOSITORY: ayushrajcodes0407/VANTIQ</span>
+            <span id="footerRepo">REPOSITORY: ayushrajcodes0407/SARTHI</span>
             <span class="separator">//</span>
             <span id="footerStatus">STATUS: INITIALIZING...</span>
         </div>

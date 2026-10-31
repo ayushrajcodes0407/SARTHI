@@ -1,4 +1,4 @@
-// VANTIQ: AI-Powered Business Intelligence Assistant — HUD Controller
+// SARTHI: AI-Powered Business Intelligence Platform — HUD Controller
 
 let recognition = null;
 let isListening = false;
@@ -12,7 +12,64 @@ if (!window.vantiqSessionId) {
     window.sarthiSessionId = window.vantiqSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 }
 
+
+// ==============================================================================
+// COLLAPSIBLE SIDEBAR CONTROLLER (Operations Console & Tactical Intel)
+// ==============================================================================
+let isLeftSidebarOpen = false;
+let isRightSidebarOpen = false;
+
+function toggleLeftSidebar(forceState) {
+    isLeftSidebarOpen = typeof forceState === 'boolean' ? forceState : !isLeftSidebarOpen;
+    const hudMain = document.querySelector('.hud-main');
+    const leftPanel = document.getElementById('leftPanel');
+    const toggleBtn = document.getElementById('toggleLeftSidebarBtn');
+        if (hudMain) hudMain.classList.toggle('left-open', isLeftSidebarOpen);
+    if (leftPanel) {
+        leftPanel.classList.toggle('panel-open', isLeftSidebarOpen);
+        leftPanel.setAttribute('aria-hidden', isLeftSidebarOpen ? 'false' : 'true');
+    }
+    if (toggleBtn) {
+        toggleBtn.classList.toggle('active', isLeftSidebarOpen);
+        toggleBtn.setAttribute('aria-expanded', isLeftSidebarOpen ? 'true' : 'false');
+    }
+        updateSidebarBackdrop();
+}
+
+function toggleRightSidebar(forceState) {
+    isRightSidebarOpen = typeof forceState === 'boolean' ? forceState : !isRightSidebarOpen;
+    const hudMain = document.querySelector('.hud-main');
+    const rightPanel = document.getElementById('rightPanel');
+    const toggleBtn = document.getElementById('toggleRightSidebarBtn');
+        if (hudMain) hudMain.classList.toggle('right-open', isRightSidebarOpen);
+    if (rightPanel) {
+        rightPanel.classList.toggle('panel-open', isRightSidebarOpen);
+        rightPanel.setAttribute('aria-hidden', isRightSidebarOpen ? 'false' : 'true');
+    }
+    if (toggleBtn) {
+        toggleBtn.classList.toggle('active', isRightSidebarOpen);
+        toggleBtn.setAttribute('aria-expanded', isRightSidebarOpen ? 'true' : 'false');
+    }
+        updateSidebarBackdrop();
+}
+
+function closeAllSidebars() {
+    toggleLeftSidebar(false);
+    toggleRightSidebar(false);
+}
+
+function updateSidebarBackdrop() {
+    const backdrop = document.getElementById('sidebarBackdrop');
+    if (!backdrop) return;
+    if (window.innerWidth <= 1024 && (isLeftSidebarOpen || isRightSidebarOpen)) {
+        backdrop.classList.add('visible');
+    } else {
+        backdrop.classList.remove('visible');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    initConversationalWorkspace();
     initVoiceRecognition();
     fetchSystemStatus();
     setInterval(fetchSystemStatus, 2000);
@@ -21,14 +78,37 @@ document.addEventListener('DOMContentLoaded', () => {
     initCatalogueModule();
     initConsoleExampleRotator();
 
-    // Keyboard shortcut: Spacebar to toggle voice when input not focused
+    // Keyboard shortcut: Spacebar for voice, Escape to close panels, Ctrl+[ and Ctrl+] for sidebars
     window.addEventListener('keydown', (e) => {
         const tag = document.activeElement ? document.activeElement.tagName : '';
         if (e.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
             e.preventDefault();
             toggleVoiceListening();
+        } else if (e.key === 'Escape') {
+            // Close active modal or active sidebars
+            const modals = ['biModal', 'catalogueModal', 'productFormModal', 'stockAdjustModal', 'productDetailModal', 'spreadsheetMappingModal'];
+            let modalClosed = false;
+            for (const id of modals) {
+                const el = document.getElementById(id);
+                if (el && el.style.display !== 'none' && el.style.display !== '') {
+                    el.style.display = 'none';
+                    modalClosed = true;
+                    break;
+                }
+            }
+            if (!modalClosed && (isLeftSidebarOpen || isRightSidebarOpen)) {
+                closeAllSidebars();
+            }
+        } else if ((e.ctrlKey || e.metaKey) && e.key === '[') {
+            e.preventDefault();
+            toggleLeftSidebar();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === ']') {
+            e.preventDefault();
+            toggleRightSidebar();
         }
     });
+
+    window.addEventListener('resize', updateSidebarBackdrop);
 });
 
 // Update Telemetry & Status
@@ -39,8 +119,10 @@ async function fetchSystemStatus() {
         const data = await res.json();
 
         // Update Date & Time
-        document.getElementById('hudDate').textContent = data.date || '--';
-        document.getElementById('hudTime').textContent = data.time || '--';
+        const hudDateEl = document.getElementById('hudDate');
+        if (hudDateEl) hudDateEl.textContent = data.date || '--';
+        const hudTimeEl = document.getElementById('hudTime');
+        if (hudTimeEl) hudTimeEl.textContent = data.time || '--';
 
         // Update CPU & RAM
         const cpu = Math.round(data.cpu || 0);
@@ -53,7 +135,7 @@ async function fetchSystemStatus() {
         // Update Battery / Arc Reactor
         if (data.battery) {
             const battP = data.battery.percent;
-            const plug = data.battery.power_plugged ? '⚡ Charging' : 'On Arc Core';
+            const plug = data.battery.power_plugged ? 'Charging' : 'On Arc Core';
             document.getElementById('batteryVal').textContent = `${battP}% (${plug})`;
             document.getElementById('batteryBar').style.width = `${battP}%`;
         } else {
@@ -185,151 +267,647 @@ function logTerminal(message, type = 'system') {
     
     let prefix = '[SYS]';
     if (type === 'user') prefix = '[COMMAND]';
-    if (type === 'jarvis' || type === 'vantiq') prefix = '[VANTIQ]';
+    if (type === 'jarvis' || type === 'vantiq' || type === 'sarthi') prefix = '[SARTHI]';
 
     entry.textContent = `${prefix} ${message}`;
     logBox.appendChild(entry);
     logBox.scrollTop = logBox.scrollHeight;
 }
 
+// ==============================================================================
+// SARTHI AUTOMATIC WAKE-WORD & HANDS-FREE VOICE EXECUTION ENGINE
+// Activation Phrase: "Sarthi" (case-insensitive with phonetic variants)
+// Modes:
+//   MODE A: Hands-Free Wake Word -> "Sarthi" -> Question -> Automatic Execution
+//   MODE B: Manual Microphone Click -> Question -> Automatic Execution
+// ==============================================================================
+
+const VoiceStates = {
+    DISABLED: 'DISABLED',
+    INITIALIZING: 'INITIALIZING',
+    WAKE_WORD_LISTENING: 'WAKE_WORD_LISTENING',
+    WAKE_WORD_DETECTED: 'WAKE_WORD_DETECTED',
+    CAPTURING_QUERY: 'CAPTURING_QUERY',
+    TRANSCRIPTION_FINALIZING: 'TRANSCRIPTION_FINALIZING',
+    EXECUTING_QUERY: 'EXECUTING_QUERY',
+    SPEAKING_RESPONSE: 'SPEAKING_RESPONSE',
+    ERROR: 'ERROR'
+};
+
+let currentVoiceState = VoiceStates.DISABLED;
+let isHandsFreeEnabled = localStorage.getItem('sarthi_handsfree_voice_enabled') === 'true';
 let isAssistantSpeaking = false;
+let isExecutingVoiceQuery = false;
+let wakeRecognition = null;
+let queryRecognition = null;
+let manualRecognition = null;
+let speechSilenceTimer = null;
 let currentSpeechLang = (localStorage.getItem('sarthi_speech_lang') || localStorage.getItem('vantiq_speech_lang')) || 'en-IN';
 
+// Subtle Web Audio API chime on wake-word detection (Zero external network dependencies)
+function playWakeWordChime() {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        // Ascending luxury enterprise chime: E5 (659Hz) -> A5 (880Hz)
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880.0, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+    } catch (e) {
+        // Fallback silently if audio context is blocked
+    }
+}
+
+// Strip leading activation word ("Sarthi" / "Hey Sarthi") and clean text
+function cleanWakeWordFromQuery(rawText) {
+    if (!rawText) return '';
+    return rawText
+        .replace(/^\s*(?:hey|hi|hello|ok|okay)?\s*(?:sarthi|saarthi|sarathi|sarti)\b[\s,.:;?!-]*/i, '')
+        .replace(/\b(?:sarthi|saarthi|sarathi|sarti)\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+// Visual State Management across all 9 strictly separated states
+function setVoiceIndicatorState(state, labelText) {
+    currentVoiceState = state;
+    const indicator = document.getElementById('voiceStateIndicator');
+    const label = document.getElementById('listenerStatus');
+    const waves = document.getElementById('voiceLiveWaves');
+    const micBtn = document.getElementById('micBtn');
+    const wakeBtn = document.getElementById('wakeWordToggleBtn');
+
+    const defaultLabels = {
+        [VoiceStates.DISABLED]: 'VOICE READY (MANUAL)',
+        [VoiceStates.INITIALIZING]: 'INITIALIZING SENSORS...',
+        [VoiceStates.WAKE_WORD_LISTENING]: 'LISTENING FOR "SARTHI"...',
+        [VoiceStates.WAKE_WORD_DETECTED]: '"SARTHI" DETECTED!',
+        [VoiceStates.CAPTURING_QUERY]: 'LISTENING TO QUERY...',
+        [VoiceStates.TRANSCRIPTION_FINALIZING]: 'FINALIZING SPEECH...',
+        [VoiceStates.EXECUTING_QUERY]: 'EXECUTING QUERY...',
+        [VoiceStates.SPEAKING_RESPONSE]: 'SARTHI SPEAKING...',
+        [VoiceStates.ERROR]: 'MICROPHONE ERROR'
+    };
+
+    const finalLabel = labelText || defaultLabels[state] || state;
+
+    if (indicator) {
+        const sLower = String(state).toLowerCase();
+        indicator.className = `voice-state-indicator state-${state} state-${sLower}`;
+        // Add backward compatibility classes for existing CSS
+        if (state === VoiceStates.WAKE_WORD_LISTENING) indicator.classList.add('state-wake_standby');
+        if (state === VoiceStates.WAKE_WORD_DETECTED) indicator.classList.add('state-wake_detected');
+        if (state === VoiceStates.CAPTURING_QUERY) indicator.classList.add('state-listening');
+        if (state === VoiceStates.EXECUTING_QUERY || state === VoiceStates.TRANSCRIPTION_FINALIZING) indicator.classList.add('state-processing');
+        if (state === VoiceStates.SPEAKING_RESPONSE) indicator.classList.add('state-speaking');
+        if (state === VoiceStates.DISABLED || state === VoiceStates.INITIALIZING) indicator.classList.add('state-idle');
+    }
+
+    if (label) {
+        label.textContent = finalLabel;
+    }
+
+    if (waves) {
+        const isWaveActive = (
+            state === VoiceStates.CAPTURING_QUERY || 
+            state === VoiceStates.SPEAKING_RESPONSE || 
+            state === VoiceStates.WAKE_WORD_DETECTED
+        );
+        waves.style.display = isWaveActive ? 'inline-flex' : 'none';
+    }
+
+    if (micBtn) {
+        if (state === VoiceStates.CAPTURING_QUERY) {
+            micBtn.classList.add('listening');
+        } else {
+            micBtn.classList.remove('listening');
+        }
+    }
+
+    if (wakeBtn) {
+        if (isHandsFreeEnabled) {
+            wakeBtn.classList.add('active');
+            wakeBtn.title = 'Hands-Free Wake-Word is ACTIVE (Say "Sarthi"). Click to turn OFF.';
+        } else {
+            wakeBtn.classList.remove('active');
+            wakeBtn.title = 'Enable Hands-Free Wake-Word Assistant (Say "Sarthi").';
+        }
+    }
+}
+
 // Speak out response using Web SpeechSynthesis
-function vantiqSpeak(text) {
+function sarthiSpeak(text) {
     if (!synth) return;
-    synth.cancel(); // cancel any active speech
+    try { synth.cancel(); } catch (e) {}
     isAssistantSpeaking = true;
 
-    // Prevent echo: If mic is currently active, abort recognition to avoid hearing itself
-    if (recognition && isListening) {
-        try { recognition.abort(); } catch (e) {}
-    }
+    // Prevent echo: stop any active recognition sessions while speaking
+    haltAllMicrophoneSessions();
+
+    setVoiceIndicatorState(VoiceStates.SPEAKING_RESPONSE);
+    const stopBtn = document.getElementById('stopSpeakingBtn');
+    if (stopBtn) stopBtn.style.display = 'inline-flex';
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.05;
     utterance.pitch = 0.95;
 
-    // Detect if response contains Hindi Devanagari script
+    // Detect Devanagari Hindi
     const hasDevanagari = /[\u0900-\u097F]/.test(text);
-
-    // Pick professional voice matching the language
-    const voices = synth.getVoices();
-    let chosenVoice = null;
     if (hasDevanagari) {
-        chosenVoice = voices.find(v => v.lang.startsWith('hi'));
         utterance.lang = 'hi-IN';
-    }
-    if (!chosenVoice) {
-        chosenVoice = voices.find(v => v.lang.includes('IN') || v.name.includes('India')) ||
-                      voices.find(v => v.name.includes('David') || v.name.includes('George') || v.name.includes('Male') || v.lang.startsWith('en'));
-    }
-    if (chosenVoice) {
-        utterance.voice = chosenVoice;
+    } else {
+        utterance.lang = currentSpeechLang;
     }
 
     utterance.onend = () => {
-        setTimeout(() => { isAssistantSpeaking = false; }, 400);
+        isAssistantSpeaking = false;
+        if (stopBtn) stopBtn.style.display = 'none';
+        onSpeechSynthesisFinished();
     };
+
     utterance.onerror = () => {
         isAssistantSpeaking = false;
+        if (stopBtn) stopBtn.style.display = 'none';
+        onSpeechSynthesisFinished();
     };
 
     synth.speak(utterance);
 }
-const jarvisSpeak = vantiqSpeak; // Backwards-compatible alias
+const vantiqSpeak = sarthiSpeak;
+const jarvisSpeak = sarthiSpeak;
 
-// Speech Recognition Init
-function initVoiceRecognition() {
+// Return to wake-word standby or idle after speech synthesis finishes
+function onSpeechSynthesisFinished() {
+    isAssistantSpeaking = false;
+    isExecutingVoiceQuery = false;
+    if (isHandsFreeEnabled) {
+        setVoiceIndicatorState(VoiceStates.WAKE_WORD_LISTENING);
+        setTimeout(() => {
+            if (isHandsFreeEnabled && !isAssistantSpeaking && !isExecutingVoiceQuery) {
+                startWakeWordListening();
+            }
+        }, 350);
+    } else {
+        setVoiceIndicatorState(VoiceStates.DISABLED);
+    }
+}
+
+// Stop Assistant Speech
+function stopAssistantSpeaking() {
+    if (synth) {
+        try { synth.cancel(); } catch (e) {}
+    }
+    isAssistantSpeaking = false;
+    const stopBtn = document.getElementById('stopSpeakingBtn');
+    if (stopBtn) stopBtn.style.display = 'none';
+    onSpeechSynthesisFinished();
+}
+
+// Halt all active speech-recognition sessions and timers safely
+function haltAllMicrophoneSessions() {
+    clearTimeout(speechSilenceTimer);
+    if (wakeRecognition) {
+        try { wakeRecognition.abort(); } catch (e) {}
+        wakeRecognition = null;
+    }
+    if (queryRecognition) {
+        try { queryRecognition.abort(); } catch (e) {}
+        queryRecognition = null;
+    }
+    if (manualRecognition) {
+        try { manualRecognition.abort(); } catch (e) {}
+        manualRecognition = null;
+    }
+    isListening = false;
+}
+
+// ==============================================================================
+// STEP 1 — AUTOMATIC MICROPHONE ACTIVATION & PERSISTENCE
+// ==============================================================================
+
+function toggleWakeWordMode() {
+    isHandsFreeEnabled = !isHandsFreeEnabled;
+    localStorage.setItem('sarthi_handsfree_voice_enabled', isHandsFreeEnabled ? 'true' : 'false');
+
+    if (isHandsFreeEnabled) {
+        activateHandsFreeMode(false);
+    } else {
+        deactivateHandsFreeMode();
+    }
+}
+
+function activateHandsFreeMode(isAutoOnLoad = false) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        document.getElementById('listenerStatus').textContent = 'WEB SPEECH API NOT SUPPORTED';
+        isHandsFreeEnabled = false;
+        localStorage.setItem('sarthi_handsfree_voice_enabled', 'false');
+        setVoiceIndicatorState(VoiceStates.ERROR, 'SPEECH RECOGNITION NOT SUPPORTED');
+        setTimeout(() => setVoiceIndicatorState(VoiceStates.DISABLED), 3000);
         return;
     }
 
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = currentSpeechLang;
+    setVoiceIndicatorState(VoiceStates.INITIALIZING, 'INITIALIZING WAKE-WORD SENSORS...');
+    setTimeout(() => {
+        startWakeWordListening();
+    }, isAutoOnLoad ? 400 : 150);
+}
 
-    recognition.onstart = () => {
-        isListening = true;
-        document.getElementById('micBtn').classList.add('listening');
-        document.getElementById('listenerStatus').textContent = `LISTENING (${currentSpeechLang})...`;
-        document.getElementById('voiceIndicator').textContent = 'AUDIO SENSORS ACTIVE...';
-    };
+function deactivateHandsFreeMode() {
+    isHandsFreeEnabled = false;
+    localStorage.setItem('sarthi_handsfree_voice_enabled', 'false');
+    haltAllMicrophoneSessions();
+    setVoiceIndicatorState(VoiceStates.DISABLED, 'VOICE READY (MANUAL)');
+}
 
-    recognition.onresult = (event) => {
-        // Echo prevention: Ignore self-produced audio
-        if (isAssistantSpeaking) {
-            console.log('Ignored speech event while assistant was speaking.');
-            return;
+// ==============================================================================
+// STEP 2 — CONTINUOUS WAKE-WORD DETECTION ("Sarthi")
+// ==============================================================================
+
+function startWakeWordListening() {
+    if (!isHandsFreeEnabled || isAssistantSpeaking || isExecutingVoiceQuery) return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    haltAllMicrophoneSessions();
+
+    try {
+        wakeRecognition = new SpeechRecognition();
+        wakeRecognition.continuous = true;
+        wakeRecognition.interimResults = true;
+        wakeRecognition.lang = currentSpeechLang;
+
+        wakeRecognition.onstart = () => {
+            setVoiceIndicatorState(VoiceStates.WAKE_WORD_LISTENING);
+        };
+
+        wakeRecognition.onresult = (event) => {
+            if (isAssistantSpeaking || isExecutingVoiceQuery) return;
+
+            let fullTranscript = '';
+            for (let i = 0; i < event.results.length; ++i) {
+                fullTranscript += event.results[i][0].transcript + ' ';
+            }
+
+            const cleanText = fullTranscript.trim();
+            const wakeMatch = cleanText.match(/\b(sarthi|saarthi|sarathi|sarti)\b/i);
+
+            if (wakeMatch) {
+                // Wake word detected! Transition immediately to capturing query
+                try { wakeRecognition.abort(); } catch (e) {}
+                wakeRecognition = null;
+
+                const wakeEndIndex = wakeMatch.index + wakeMatch[0].length;
+                const trailingQuery = cleanText.substring(wakeEndIndex).replace(/^[\s,.:;?!-]+/, '').trim();
+                onWakeWordDetected(trailingQuery);
+            }
+        };
+
+        wakeRecognition.onerror = (event) => {
+            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                isHandsFreeEnabled = false;
+                localStorage.setItem('sarthi_handsfree_voice_enabled', 'false');
+                setVoiceIndicatorState(VoiceStates.ERROR, 'MIC PERMISSION DENIED');
+                setTimeout(() => setVoiceIndicatorState(VoiceStates.DISABLED), 3500);
+            } else if (event.error === 'no-speech' || event.error === 'aborted') {
+                if (isHandsFreeEnabled && !isAssistantSpeaking && !isExecutingVoiceQuery && currentVoiceState === VoiceStates.WAKE_WORD_LISTENING) {
+                    setTimeout(() => startWakeWordListening(), 300);
+                }
+            } else {
+                if (isHandsFreeEnabled && !isAssistantSpeaking && !isExecutingVoiceQuery) {
+                    setTimeout(() => startWakeWordListening(), 600);
+                }
+            }
+        };
+
+        wakeRecognition.onend = () => {
+            if (isHandsFreeEnabled && !isAssistantSpeaking && !isExecutingVoiceQuery && currentVoiceState === VoiceStates.WAKE_WORD_LISTENING) {
+                setTimeout(() => startWakeWordListening(), 300);
+            }
+        };
+
+        wakeRecognition.start();
+    } catch (e) {
+        console.warn('Wake-word listener startup exception:', e);
+        setVoiceIndicatorState(VoiceStates.DISABLED);
+    }
+}
+
+function onWakeWordDetected(trailingQuery = '') {
+    playWakeWordChime();
+    setVoiceIndicatorState(VoiceStates.WAKE_WORD_DETECTED);
+
+    setTimeout(() => {
+        startCapturingQuery(trailingQuery);
+    }, 450);
+}
+
+// ==============================================================================
+// STEP 3 & 4 — CAPTURE USER QUESTION & AUTOMATIC QUERY EXECUTION
+// ==============================================================================
+
+function startCapturingQuery(initialText = '') {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    haltAllMicrophoneSessions();
+    setVoiceIndicatorState(VoiceStates.CAPTURING_QUERY);
+
+    const input = document.getElementById('commandInput');
+    const cleanedInitial = cleanWakeWordFromQuery(initialText);
+
+    if (input) {
+        input.value = cleanedInitial;
+        if (cleanedInitial.length > 3) {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+            // Start end-of-speech silence timer for query already spoken with wake word
+            scheduleSpeechAutoSubmission(cleanedInitial, 1400);
         }
-        if (isCommandExecuting) {
-            console.log('Ignored speech event: another command is currently executing.');
-            return;
+    }
+
+    try {
+        queryRecognition = new SpeechRecognition();
+        queryRecognition.continuous = false;
+        queryRecognition.interimResults = true;
+        queryRecognition.lang = currentSpeechLang;
+
+        queryRecognition.onstart = () => {
+            isListening = true;
+            setVoiceIndicatorState(VoiceStates.CAPTURING_QUERY);
+        };
+
+        queryRecognition.onresult = (event) => {
+            clearTimeout(speechSilenceTimer);
+            let interimTranscript = '';
+            let finalTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+
+            const rawText = (finalTranscript || interimTranscript).trim();
+            const cleanedQuery = cleanWakeWordFromQuery(rawText);
+
+            if (input && cleanedQuery) {
+                input.value = cleanedQuery;
+                input.style.height = 'auto';
+                input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+
+                // Automatically submit 1.3s after user stops speaking
+                scheduleSpeechAutoSubmission(cleanedQuery, 1300);
+            }
+        };
+
+        queryRecognition.onend = () => {
+            isListening = false;
+            const captured = input ? input.value.trim() : '';
+            if (captured.length > 2 && !isExecutingVoiceQuery) {
+                finalizeAndExecuteVoiceQuery(captured);
+            } else if (isHandsFreeEnabled && !isAssistantSpeaking && !isExecutingVoiceQuery) {
+                setVoiceIndicatorState(VoiceStates.WAKE_WORD_LISTENING);
+                startWakeWordListening();
+            } else if (!isHandsFreeEnabled) {
+                setVoiceIndicatorState(VoiceStates.DISABLED);
+            }
+        };
+
+        queryRecognition.onerror = (event) => {
+            isListening = false;
+            console.warn('Query capture speech notice:', event.error);
+            if (isHandsFreeEnabled && !isAssistantSpeaking && !isExecutingVoiceQuery) {
+                setTimeout(() => startWakeWordListening(), 600);
+            } else {
+                setVoiceIndicatorState(VoiceStates.DISABLED);
+            }
+        };
+
+        queryRecognition.start();
+    } catch (e) {
+        console.warn('Query capture start exception:', e);
+        if (isHandsFreeEnabled) startWakeWordListening();
+        else setVoiceIndicatorState(VoiceStates.DISABLED);
+    }
+}
+
+function scheduleSpeechAutoSubmission(queryText, delayMs = 1300) {
+    clearTimeout(speechSilenceTimer);
+    speechSilenceTimer = setTimeout(() => {
+        if (queryRecognition) {
+            try { queryRecognition.stop(); } catch (e) {}
         }
-        const transcript = event.results[0][0].transcript;
-        logTerminal(transcript, 'user');
-        executeCommand(transcript);
-    };
+        if (manualRecognition) {
+            try { manualRecognition.stop(); } catch (e) {}
+        }
+        finalizeAndExecuteVoiceQuery(queryText);
+    }, delayMs);
+}
 
-    recognition.onerror = (event) => {
-        console.warn('Recognition error:', event.error);
-        stopListeningState();
-    };
+// Unified transcription finalization and AUTOMATIC QUERY EXECUTION (No click on Execute required!)
+async function finalizeAndExecuteVoiceQuery(rawQuery) {
+    clearTimeout(speechSilenceTimer);
+    if (isExecutingVoiceQuery) return; // Prevent duplicate submissions
 
-    recognition.onend = () => {
-        stopListeningState();
-    };
+    const query = cleanWakeWordFromQuery(rawQuery || (document.getElementById('commandInput')?.value || ''));
+
+    if (!query || query.replace(/[^a-zA-Z0-9]/g, '').length < 2) {
+        // Empty transcription or ambient noise; return to listening
+        if (isHandsFreeEnabled && !isAssistantSpeaking) {
+            setVoiceIndicatorState(VoiceStates.WAKE_WORD_LISTENING);
+            startWakeWordListening();
+        } else {
+            setVoiceIndicatorState(VoiceStates.DISABLED);
+        }
+        return;
+    }
+
+    isExecutingVoiceQuery = true;
+    setVoiceIndicatorState(VoiceStates.TRANSCRIPTION_FINALIZING);
+
+    const input = document.getElementById('commandInput');
+    if (input) {
+        input.value = query;
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+    }
+
+    // Move to executing state and automatically invoke the EXACT SAME submission function
+    setVoiceIndicatorState(VoiceStates.EXECUTING_QUERY);
+
+    try {
+        await executeCommand(query);
+    } catch (err) {
+        console.error('Voice auto-execution error:', err);
+        isExecutingVoiceQuery = false;
+        onSpeechSynthesisFinished();
+    }
+}
+
+// ==============================================================================
+// STEP 2 — MANUAL MICROPHONE BUTTON (Mode B: Click Mic -> Speak -> Auto Execute)
+// ==============================================================================
+
+function toggleVoiceListening() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        setVoiceIndicatorState(VoiceStates.ERROR, 'SPEECH RECOGNITION NOT SUPPORTED');
+        setTimeout(() => setVoiceIndicatorState(VoiceStates.DISABLED), 3000);
+        return;
+    }
+
+    if (isAssistantSpeaking) {
+        stopAssistantSpeaking();
+    }
+
+    // If currently listening manually, stop and finalize
+    if (isListening && manualRecognition) {
+        try { manualRecognition.stop(); } catch (e) {}
+        clearTimeout(speechSilenceTimer);
+        const input = document.getElementById('commandInput');
+        const text = input ? input.value.trim() : '';
+        if (text.length > 2) {
+            finalizeAndExecuteVoiceQuery(text);
+        } else {
+            haltAllMicrophoneSessions();
+            setVoiceIndicatorState(VoiceStates.DISABLED);
+        }
+        return;
+    }
+
+    // Start manual direct query capture (No wake-word required)
+    haltAllMicrophoneSessions();
+
+    const input = document.getElementById('commandInput');
+    if (input) input.value = '';
+
+    try {
+        manualRecognition = new SpeechRecognition();
+        manualRecognition.continuous = false;
+        manualRecognition.interimResults = true;
+        manualRecognition.lang = currentSpeechLang;
+
+        manualRecognition.onstart = () => {
+            isListening = true;
+            setVoiceIndicatorState(VoiceStates.CAPTURING_QUERY, 'SPEAK YOUR QUESTION...');
+        };
+
+        manualRecognition.onresult = (event) => {
+            clearTimeout(speechSilenceTimer);
+            let interimTranscript = '';
+            let finalTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+
+            const currentText = (finalTranscript || interimTranscript).trim();
+            if (input && currentText) {
+                input.value = currentText;
+                input.style.height = 'auto';
+                input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+
+                // Automatically submit 1.3s after user stops speaking
+                scheduleSpeechAutoSubmission(currentText, 1300);
+            }
+        };
+
+        manualRecognition.onend = () => {
+            isListening = false;
+            const captured = input ? input.value.trim() : '';
+            if (captured.length > 2 && !isExecutingVoiceQuery) {
+                finalizeAndExecuteVoiceQuery(captured);
+            } else if (!isExecutingVoiceQuery) {
+                if (isHandsFreeEnabled && !isAssistantSpeaking) {
+                    setVoiceIndicatorState(VoiceStates.WAKE_WORD_LISTENING);
+                    startWakeWordListening();
+                } else {
+                    setVoiceIndicatorState(VoiceStates.DISABLED);
+                }
+            }
+        };
+
+        manualRecognition.onerror = (event) => {
+            isListening = false;
+            console.warn('Manual microphone notice:', event.error);
+            if (event.error === 'not-allowed') {
+                setVoiceIndicatorState(VoiceStates.ERROR, 'MIC PERMISSION DENIED');
+            } else {
+                setVoiceIndicatorState(VoiceStates.ERROR, `MIC ERROR (${event.error})`);
+            }
+            setTimeout(() => {
+                if (isHandsFreeEnabled) startWakeWordListening();
+                else setVoiceIndicatorState(VoiceStates.DISABLED);
+            }, 2500);
+        };
+
+        manualRecognition.start();
+    } catch (e) {
+        console.error('Manual recognition start exception:', e);
+        setVoiceIndicatorState(VoiceStates.ERROR, 'MIC BUSY / ERROR');
+        setTimeout(() => setVoiceIndicatorState(VoiceStates.DISABLED), 2000);
+    }
+}
+
+// Initializer called on DOMContentLoaded
+function initVoiceRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        setVoiceIndicatorState(VoiceStates.DISABLED, 'VOICE ENGINE READY (TEXT ONLY)');
+        return;
+    }
+
+    // Clean up sessions on page unload or refresh
+    window.addEventListener('beforeunload', () => {
+        haltAllMicrophoneSessions();
+    });
+
+    // Check if user previously enabled hands-free voice mode
+    if (isHandsFreeEnabled) {
+        activateHandsFreeMode(true);
+    } else {
+        setVoiceIndicatorState(VoiceStates.DISABLED, 'VOICE READY (MANUAL)');
+    }
 }
 
 function setSpeechLanguage(lang) {
     currentSpeechLang = lang || 'en-IN';
-    localStorage.setItem('sarthi_speech_lang', currentSpeechLang); localStorage.setItem('vantiq_speech_lang', currentSpeechLang);
-    if (recognition) {
-        recognition.lang = currentSpeechLang;
-    }
-    logTerminal(`Speech recognition language set to ${currentSpeechLang}`, 'system');
+    localStorage.setItem('sarthi_speech_lang', currentSpeechLang);
+    localStorage.setItem('vantiq_speech_lang', currentSpeechLang);
+    if (wakeRecognition) wakeRecognition.lang = currentSpeechLang;
+    if (queryRecognition) queryRecognition.lang = currentSpeechLang;
+    if (manualRecognition) manualRecognition.lang = currentSpeechLang;
+    setVoiceIndicatorState(currentVoiceState, `VOICE READY (${currentSpeechLang})`);
 }
 
 function stopListeningState() {
-    isListening = false;
-    document.getElementById('micBtn').classList.remove('listening');
-    document.getElementById('listenerStatus').textContent = 'VOICE ENGINE READY';
-    document.getElementById('voiceIndicator').textContent = 'CLICK TO ENGAGE SPEECH';
-}
-
-function toggleVoiceListening() {
-    if (!recognition) {
-        logTerminal('Web Speech Recognition is not supported on this browser. Please use text input or Chrome/Edge.', 'system');
-        return;
-    }
-
-    if (isListening) {
-        recognition.stop();
-        stopListeningState();
+    haltAllMicrophoneSessions();
+    if (isHandsFreeEnabled && !isAssistantSpeaking) {
+        setVoiceIndicatorState(VoiceStates.WAKE_WORD_LISTENING);
+        startWakeWordListening();
     } else {
-        try {
-            recognition.start();
-        } catch (e) {
-            console.error('Recognition start error:', e);
-        }
+        setVoiceIndicatorState(VoiceStates.DISABLED);
     }
+    const voiceInd = document.getElementById('voiceIndicator');
+    if (voiceInd) voiceInd.textContent = 'CLICK TO ENGAGE SPEECH';
 }
-
-// Rotating Example Queries & Console Guidance
-const SARTHI_CONSOLE_EXAMPLES = [
-    "Which products are currently low in stock?",
-    "Show me the latest purchase price of a product.",
-    "Which products have the highest gross margins?",
-    "Summarize this month's sales performance.",
-    "Which suppliers provide a particular product?",
-    "Show products that have not been sold recently."
-];
-
-let sarthiExampleIndex = 0;
-let sarthiExampleTimer = null;
 
 function initConsoleExampleRotator() {
     const el = document.getElementById('exampleRotatorQuery');
@@ -369,7 +947,7 @@ function setConsoleQuery(queryText) {
 
 // Handle Form Submission
 function handleCommandSubmit(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (isCommandExecuting) {
         console.warn('Command currently executing. Please wait.');
         return;
@@ -378,8 +956,18 @@ function handleCommandSubmit(e) {
     const command = input.value.trim();
     if (!command) return;
 
+    // Transition to conversational interface state
+    setAppState('chat');
+
+    // Append user message to modern chat stream
+    appendChatMessage('user', command, { file: currentAttachedFile ? currentAttachedFile.name : null });
+
+    // Display thinking indicator
+    showChatThinking();
+
     logTerminal(command, 'user');
     input.value = '';
+    input.style.height = 'auto';
     executeCommand(command);
 }
 
@@ -398,10 +986,13 @@ async function executeCommand(cmd) {
 
     const sendBtn = document.getElementById('sendBtn');
     const input = document.getElementById('commandInput');
+    setVoiceIndicatorState('processing', 'PROCESSING TACTICAL QUERY...');
     if (sendBtn) {
         sendBtn.disabled = true;
         sendBtn.classList.add('loading');
-        sendBtn.textContent = 'EXECUTING...';
+        const label = sendBtn.querySelector('.execute-btn-label');
+        if (label) label.textContent = 'EXECUTING...';
+        else sendBtn.textContent = 'EXECUTING...';
     }
     if (input) {
         input.disabled = true;
@@ -426,6 +1017,34 @@ async function executeCommand(cmd) {
             return;
         }
 
+        hideChatThinking();
+
+        // Format and append assistant response to chat stream
+        let chatReply = data.explanation || data.display || data.speak || '';
+        if (data.action === 'joke') {
+            chatReply = `"${data.display}"`;
+        } else if (data.action === 'youtube' && data.url) {
+            chatReply = `${data.display}\n\n[Launch YouTube Stream](${data.url})`;
+        }
+
+        if (data.table && data.table.headers && data.table.rows) {
+            const thRow = '| ' + data.table.headers.join(' | ') + ' |';
+            const sepRow = '| ' + data.table.headers.map(() => '---').join(' | ') + ' |';
+            const bodyRows = data.table.rows.map(r => '| ' + (Array.isArray(r) ? r : Object.values(r)).join(' | ') + ' |').join('\n');
+            chatReply += `\n\n${thRow}\n${sepRow}\n${bodyRows}`;
+        }
+
+        if (data.citations && data.citations.length > 0) {
+            chatReply += '\n\n**Sources & Citations:**\n' + data.citations.map(c => `- **${c.citation}**: ${c.excerpt || ''}`).join('\n');
+        }
+
+        appendChatMessage('sarthi', chatReply, {
+            action: data.action,
+            model: data.model,
+            latency: data.inference_time_seconds,
+            follow_ups: data.follow_ups
+        });
+
         if (data.speak) {
             logTerminal(data.speak, 'jarvis');
             jarvisSpeak(data.speak);
@@ -447,7 +1066,7 @@ async function executeCommand(cmd) {
                     ${escapeHtml(data.explanation || data.display)}
                 </div>
                 <div class="llm-meta-tag">
-                    <span>⚡ Model: ${escapeHtml(data.model || 'qwen3:4b-instruct')}</span>
+                    <span>Model: ${escapeHtml(data.model || 'qwen3:4b-instruct')}</span>
                     ${data.inference_time_seconds ? `<span>• Latency: ${data.inference_time_seconds}s</span>` : ''}
                     <span>• Local Offline Inference</span>
                 </div>
@@ -455,8 +1074,8 @@ async function executeCommand(cmd) {
             `);
         } else if (data.action === 'identity' || data.action === 'capabilities' || data.action === 'greeting' || data.action === 'acknowledgement') {
             let followUps = renderFollowUpsHtml(data.follow_ups);
-            displayIntelCard('VANTIQ AI ASSISTANT', `
-                <div class="source-badge">SOURCE: ${escapeHtml(data.source || 'VANTIQ Core')}</div>
+            displayIntelCard('SARTHI AI ASSISTANT', `
+                <div class="source-badge">SOURCE: ${escapeHtml(data.source || 'SARTHI Core')}</div>
                 <div class="llm-explanation-box">
                     ${escapeHtml(data.display || data.speak)}
                 </div>
@@ -464,7 +1083,7 @@ async function executeCommand(cmd) {
             `);
         } else if (data.action === 'general_chat') {
             let followUps = renderFollowUpsHtml(data.follow_ups);
-            displayIntelCard('VANTIQ CONVERSATIONAL AI', `
+            displayIntelCard('SARTHI CONVERSATIONAL AI', `
                 <div class="source-badge">SOURCE: ${escapeHtml(data.source || 'Local AI')}</div>
                 <div class="llm-explanation-box">
                     ${escapeHtml(data.display || data.speak)}
@@ -480,12 +1099,12 @@ async function executeCommand(cmd) {
         } else if (data.action === 'news') {
             requestNews();
         } else if (data.action === 'bi_report_summary') {
-            displayIntelCard('BUSINESS INTELLIGENCE REPORT', `<p style="color: var(--cyan);">${data.display}</p><button class="launch-bi-btn" style="margin-top: 8px;" onclick="openBIModal()">⚡ OPEN DOSSIER</button>`);
+            displayIntelCard('BUSINESS INTELLIGENCE REPORT', `<p style="color: var(--cyan);">${data.display}</p><button class="launch-bi-btn" style="margin-top: 8px;" onclick="openBIModal()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> OPEN DOSSIER</button>`);
             if (data.report) currentBIReport = data.report;
         } else if (data.action === 'bi_quality') {
             let list = '<ul style="list-style: none; font-size: 0.75rem; display: flex; flex-direction: column; gap: 4px;">';
             (data.issues || []).forEach(it => {
-                list += `<li>⚠️ [${it.severity}] ${it.column}: ${it.message}</li>`;
+                list += `<li>[${it.severity}] ${it.column}: ${it.message}</li>`;
             });
             list += '</ul>';
             displayIntelCard('DATA QUALITY AUDIT', `<p style="margin-bottom: 6px; font-weight: bold; color: var(--gold);">${data.display}</p>${list}<button class="launch-bi-btn" style="margin-top: 8px;" onclick="openBIModal(); switchBITab('quality');">VIEW AUDIT DETAILS</button>`);
@@ -498,7 +1117,7 @@ async function executeCommand(cmd) {
         } else if (data.action === 'bi_insights') {
             let list = '<ul style="list-style: none; font-size: 0.75rem; display: flex; flex-direction: column; gap: 6px;">';
             (data.insights || []).forEach(i => {
-                list += `<li><strong style="color: var(--cyan);">⚡ ${i.title}:</strong> ${i.explanation}</li>`;
+                list += `<li><strong style="color: var(--cyan);">${i.title}:</strong> ${i.explanation}</li>`;
             });
             list += '</ul>';
             displayIntelCard('SYNTHESIZED INSIGHTS', list + `<button class="launch-bi-btn" style="margin-top: 8px;" onclick="openBIModal(); switchBITab('overview');">OPEN DOSSIER</button>`);
@@ -514,7 +1133,7 @@ async function executeCommand(cmd) {
                 <p style="color: #fff; margin-bottom: 8px;">${escapeHtml(data.display)}</p>
                 ${tableHtml}
                 <div style="margin-top: 10px; display: flex; gap: 8px;">
-                    <button class="launch-bi-btn" onclick="openCatalogueModal()">⚡ OPEN CATALOGUE MODAL</button>
+                    <button class="launch-bi-btn" onclick="openCatalogueModal()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> OPEN CATALOGUE MODAL</button>
                 </div>
                 ${followUps}
             `);
@@ -732,7 +1351,7 @@ async function executeCommand(cmd) {
         } else if (data.action === 'out_of_scope') {
             let followUps = renderFollowUpsHtml(data.follow_ups);
             displayIntelCard('TACTICAL SCOPE ADVISORY', `
-                <div class="source-badge">SOURCE: VANTIQ Core</div>
+                <div class="source-badge">SOURCE: SARTHI Core</div>
                 <p style="color: var(--gold); line-height: 1.4; margin-bottom: 8px;">${escapeHtml(data.display || data.speak)}</p>
                 ${followUps}
             `);
@@ -750,7 +1369,7 @@ async function executeCommand(cmd) {
                 <h4 style="color: #ef4444; margin: 6px 0;">${escapeHtml(data.display || 'Local AI Service Offline')}</h4>
                 <p style="color: #fff; line-height: 1.4; margin-bottom: 8px;">${escapeHtml(data.speak || '')}</p>
                 <div class="llm-meta-tag" style="color: #ef4444;">
-                    <span>⚠️ Ollama service is unreachable at 127.0.0.1:11434</span>
+                    <span>Ollama service is unreachable at 127.0.0.1:11434</span>
                 </div>
                 ${followUps}
             `);
@@ -761,7 +1380,7 @@ async function executeCommand(cmd) {
                 <h4 style="color: #f43f5e; margin: 6px 0;">${escapeHtml(data.display || 'Model Missing')}</h4>
                 <p style="color: #fff; line-height: 1.4; margin-bottom: 8px;">${escapeHtml(data.speak || '')}</p>
                 <div class="llm-meta-tag" style="color: #f43f5e;">
-                    <span>⚠️ Configured model is not pulled in local Ollama</span>
+                    <span>Configured model is not pulled in local Ollama</span>
                 </div>
                 ${followUps}
             `);
@@ -772,7 +1391,7 @@ async function executeCommand(cmd) {
                 <h4 style="color: #fb923c; margin: 6px 0;">${escapeHtml(data.display || 'Inference Timeout')}</h4>
                 <p style="color: #fff; line-height: 1.4; margin-bottom: 8px;">${escapeHtml(data.speak || '')}</p>
                 <div class="llm-meta-tag" style="color: #fb923c;">
-                    <span>⏱️ Model took longer than allowed timeout</span>
+                    <span>Model took longer than allowed timeout</span>
                 </div>
                 ${followUps}
             `);
@@ -791,7 +1410,7 @@ async function executeCommand(cmd) {
                 <h4 style="color: var(--cyan); margin: 6px 0;">${escapeHtml(data.display || '')}</h4>
                 <p style="color: #fff; line-height: 1.4; margin-bottom: 8px;">${escapeHtml(data.speak || '')}</p>
                 <div class="llm-meta-tag" style="color: var(--gold); margin-top: 6px;">
-                    <span>⚠️ External open-market pricing unverified • Internal records shown</span>
+                    <span>External open-market pricing unverified • Internal records shown</span>
                 </div>
                 ${followUps}
             `);
@@ -805,8 +1424,8 @@ async function executeCommand(cmd) {
             `);
         } else {
             let followUps = renderFollowUpsHtml(data.follow_ups);
-            displayIntelCard(data.source || 'VANTIQ INTELLIGENCE', `
-                <div class="source-badge">SOURCE: ${escapeHtml(data.source || 'VANTIQ Core')}</div>
+            displayIntelCard(data.source || 'SARTHI INTELLIGENCE', `
+                <div class="source-badge">SOURCE: ${escapeHtml(data.source || 'SARTHI Core')}</div>
                 <h4 style="color: var(--cyan); margin: 6px 0;">${escapeHtml(data.display || '')}</h4>
                 <p style="color: #fff; line-height: 1.4; margin-bottom: 8px;">${escapeHtml(data.speak || '')}</p>
                 ${followUps}
@@ -814,6 +1433,8 @@ async function executeCommand(cmd) {
         }
 
     } catch (err) {
+        hideChatThinking();
+        appendChatMessage('sarthi', `I encountered an operational issue while processing your inquiry: ${err.message}`, { isError: true });
         logTerminal(`Command execution failed: ${err.message}`, 'system');
     } finally {
         isCommandExecuting = false;
@@ -822,12 +1443,16 @@ async function executeCommand(cmd) {
         if (sendBtn) {
             sendBtn.disabled = false;
             sendBtn.classList.remove('loading');
-            sendBtn.textContent = 'EXECUTE';
+            const label = sendBtn.querySelector('.execute-btn-label');
+            if (label) label.textContent = 'EXECUTE';
+            else sendBtn.textContent = 'EXECUTE';
         }
         if (input) {
             input.disabled = false;
         }
-        document.getElementById('listenerStatus').textContent = isListening ? `LISTENING (${currentSpeechLang})...` : 'VOICE ENGINE READY';
+        if (!isAssistantSpeaking && !isListening) {
+            setVoiceIndicatorState('idle', 'VOICE READY');
+        }
     }
 }
 
@@ -857,7 +1482,7 @@ function renderTableHtml(table) {
 // Helper to render interactive follow-up chips
 function renderFollowUpsHtml(chips) {
     if (!chips || chips.length === 0) return '';
-    let buttons = chips.map(c => `<button type="button" class="intel-followup-chip" onclick="executeCommand('${escapeHtml(c)}')">💡 ${escapeHtml(c)}</button>`).join('');
+    let buttons = chips.map(c => `<button type="button" class="intel-followup-chip" onclick="executeCommand('${escapeHtml(c)}')"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> ${escapeHtml(c)}</button>`).join('');
     return `
         <div class="intel-followup-container">
             <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">SUGGESTIONS:</span>
@@ -934,7 +1559,7 @@ async function openBusinessInsights() {
         <p style="color: var(--text-muted); font-size: 0.84rem; line-height: 1.4; margin-top: 8px;">
             Import an Excel spreadsheet or PDF document via the Business Data Import module below to generate executive KPI analytics, margin breakdowns, and data quality audits.
         </p>
-        <button type="button" class="cat-btn-primary" style="margin-top: 10px; width: 100%;" onclick="document.getElementById('businessFileInput').click()">📁 SELECT FILE TO ANALYZE</button>
+        <button type="button" class="cat-btn-primary" style="margin-top: 10px; width: 100%;" onclick="document.getElementById('businessFileInput').click()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg> SELECT FILE TO ANALYZE</button>
     `;
     displayIntelCard('BUSINESS INTELLIGENCE', html);
     logTerminal('[BI NOTICE] No active business report. Please import an Excel or PDF dataset.', 'system');
@@ -1002,7 +1627,7 @@ async function openSuppliersPurchases() {
         }
         html += `</div>`;
 
-        html += `<button type="button" class="cat-btn-secondary" style="margin-top: 10px; width: 100%; font-size: 0.76rem;" onclick="openCatalogueModal()">📦 OPEN CATALOGUE & INVENTORY</button>`;
+        html += `<button type="button" class="cat-btn-secondary" style="margin-top: 10px; width: 100%; font-size: 0.76rem;" onclick="openCatalogueModal()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg> OPEN CATALOGUE & INVENTORY</button>`;
 
         displayIntelCard('SUPPLIERS & PURCHASES', html);
         const speakText = `Supplier and procurement ledger loaded. Found ${suppliers.length} registered suppliers and ${receipts.length} stock receipts.`;
@@ -1077,6 +1702,7 @@ async function showSystemStatus() {
 }
 
 async function openDocumentLibrary() {
+    toggleRightSidebar(true);
     logTerminal('Synchronizing and opening Document & Dataset Library...', 'system');
     
     // 1. Refresh library datasets
@@ -1164,7 +1790,7 @@ async function requestNews() {
         const data = await res.json();
         let listHtml = '<ul style="list-style: none; display: flex; flex-direction: column; gap: 8px;">';
         data.articles.forEach(art => {
-            listHtml += `<li><a href="${art.url}" target="_blank" style="color: var(--cyan); text-decoration: none; font-size: 0.88rem;">⚡ ${art.title}</a></li>`;
+            listHtml += `<li><a href="${art.url}" target="_blank" style="color: var(--cyan); text-decoration: none; font-size: 0.88rem;">${art.title}</a></li>`;
         });
         listHtml += '</ul>';
         displayIntelCard('LIVE TECH INTEL', listHtml);
@@ -1304,9 +1930,9 @@ function handleFileSelection(file) {
     // File type icon
     const iconElem = document.getElementById('fileTypeIcon');
     if (ext === 'pdf') {
-        iconElem.textContent = '📕';
+        iconElem.innerHTML = '<svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>';
     } else {
-        iconElem.textContent = '📊';
+        iconElem.innerHTML = '<svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><line x1="12" y1="11" x2="12" y2="19"></line></svg>';
     }
 
     // Toggle view states
@@ -1463,7 +2089,7 @@ function renderImportResult(data) {
         } else {
             previewContent.innerHTML = `
                 <div class="import-error-banner" style="margin: 4px 0;">
-                    <span class="error-icon">ℹ️</span>
+                    <span class="error-icon"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></span>
                     <span class="error-text">${escapeHtml(data.message)}</span>
                 </div>
             `;
@@ -1560,7 +2186,7 @@ async function launchReport() {
     const launchBtn = document.getElementById('launchReportBtn') || document.getElementById('launchBIBtn');
     if (launchBtn) {
         launchBtn.classList.add('loading');
-        launchBtn.innerHTML = '⚡ ANALYZING...';
+        launchBtn.innerHTML = '<span class="btn-loading-dot"></span> ANALYZING...';
     }
 
     try {
@@ -1584,7 +2210,7 @@ async function launchReport() {
     } finally {
         if (launchBtn) {
             launchBtn.classList.remove('loading');
-            launchBtn.innerHTML = '⚡ LAUNCH REPORT';
+            launchBtn.innerHTML = '<svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> LAUNCH REPORT';
         }
     }
 
@@ -1908,7 +2534,7 @@ function renderQualityPane(report) {
 
     let issuesRows = '';
     if (issues.length === 0) {
-        issuesRows = '<tr><td colspan="6" style="text-align: center; color: #00ffaa; padding: 14px;">✅ No data quality violations detected. Dataset is fully intact.</td></tr>';
+        issuesRows = '<tr><td colspan="6" style="text-align: center; color: #00ffaa; padding: 14px;"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="#00ffaa" stroke-width="2" style="display:inline-block; vertical-align:middle; margin-right:6px;"><polyline points="20 6 9 17 4 12"></polyline></svg> No data quality violations detected. Dataset is fully intact.</td></tr>';
     } else {
         issuesRows = issues.map(iss => {
             const sevClass = (iss.severity || 'info').toLowerCase();
@@ -1981,7 +2607,7 @@ function renderStatsPane(report) {
     if (!stats.available && (!numStats || numStats.length === 0)) {
         return `
             <div class="bi-notice-box" style="margin-bottom: 16px;">
-                ℹ️ Statistical analysis and numerical correlations are not applicable to unstructured document text.
+                Statistical analysis and numerical correlations are not applicable to unstructured document text.
             </div>
             ${renderUnavailableMetricsSection(unavail)}
         `;
@@ -2592,6 +3218,14 @@ async function loadSavedDatasets(page = 1) {
 
     if (!container) return;
 
+    // Loading State
+    container.innerHTML = `
+        <div class="library-loading-state">
+            <div class="library-loading-spinner"></div>
+            <span class="library-loading-text">Scanning data repository...</span>
+        </div>
+    `;
+
     try {
         let url = `/api/datasets?page=${libraryCurrentPage}&page_size=${libraryPageSize}`;
         if (librarySearchQuery) url += `&search=${encodeURIComponent(librarySearchQuery)}`;
@@ -2611,8 +3245,23 @@ async function loadSavedDatasets(page = 1) {
         if (datasets.length === 0) {
             container.innerHTML = `
                 <div class="library-empty-state">
-                    <span class="empty-icon">📂</span>
-                    <p class="empty-text">${librarySearchQuery || libraryFilterType ? 'No datasets match your search criteria.' : 'No saved datasets yet. Import an Excel or PDF file to begin.'}</p>
+                    <div class="empty-icon-wrap">
+                        <svg class="empty-illustration-svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="32" cy="14" rx="20" ry="7"></ellipse>
+                            <path d="M12 14v16c0 3.87 8.95 7 20 7s20-3.13 20-7V14"></path>
+                            <path d="M12 30v16c0 3.87 8.95 7 20 7s20-3.13 20-7V30"></path>
+                            <circle cx="44" cy="44" r="10" fill="#0b172a" stroke="#16d9e8" stroke-width="1.5"></circle>
+                            <path d="M44 40v8M40 44h8" stroke="#16d9e8" stroke-width="1.5"></path>
+                        </svg>
+                    </div>
+                    <h4 class="empty-title">No datasets available</h4>
+                    <p class="empty-text">${librarySearchQuery || libraryFilterType ? 'No datasets match your search criteria.' : 'Import an Excel, CSV, or PDF file to start analyzing data with SARTHI.'}</p>
+                    ${!librarySearchQuery && !libraryFilterType ? `
+                        <button type="button" class="empty-import-action" onclick="document.getElementById('businessFileInput')?.click() || document.getElementById('dropZone')?.scrollIntoView({behavior:'smooth'})">
+                            <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                            IMPORT DATASET
+                        </button>
+                    ` : ''}
                 </div>
             `;
             if (paginationRow) paginationRow.style.display = 'none';
@@ -2623,43 +3272,59 @@ async function loadSavedDatasets(page = 1) {
         datasets.forEach(ds => {
             const isCur = ds.id === activeDatasetId;
             const ext = (ds.file_type || '').toLowerCase();
-            const dateStr = ds.created_at ? new Date(ds.created_at).toLocaleString() : 'N/A';
+            const dateStr = ds.created_at ? new Date(ds.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A';
             const countInfo = ext === 'pdf' ? `${ds.page_count || 1} Pages` : `${ds.row_count || 0} Rows`;
             const idxStatus = ds.index_status || 'unindexed';
             const chunkCount = ds.chunk_count || 0;
 
+            let fileIconSvg = '';
+            if (ext === 'pdf') {
+                fileIconSvg = `<svg class="ds-file-icon pdf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`;
+            } else {
+                fileIconSvg = `<svg class="ds-file-icon sheet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><line x1="12" y1="11" x2="12" y2="19"></line></svg>`;
+            }
+
             let statusBadge = '';
             if (idxStatus === 'indexed') {
-                statusBadge = `<span class="bi-badge" style="background: rgba(0,255,170,0.15); color: #00ffaa; border: 1px solid #00ffaa; font-size: 0.65rem;">INDEXED (${chunkCount})</span>`;
+                statusBadge = `<span class="ds-status-pill indexed" title="Indexed for semantic RAG retrieval"><span class="ds-status-dot"></span>INDEXED (${chunkCount})</span>`;
             } else if (idxStatus === 'empty_ocr_required') {
-                statusBadge = `<span class="bi-badge" style="background: rgba(255,170,0,0.15); color: #ffaa00; border: 1px solid #ffaa00; font-size: 0.65rem;">OCR REQUIRED</span>`;
+                statusBadge = `<span class="ds-status-pill warning" title="Scanned PDF requires OCR"><span class="ds-status-dot"></span>OCR REQUIRED</span>`;
             } else if (idxStatus === 'failed') {
-                statusBadge = `<span class="bi-badge" style="background: rgba(255,51,68,0.15); color: #ff3344; border: 1px solid #ff3344; font-size: 0.65rem;">FAILED</span>`;
+                statusBadge = `<span class="ds-status-pill failed" title="Indexing process encountered an error"><span class="ds-status-dot"></span>FAILED</span>`;
             } else if (idxStatus === 'indexing') {
-                statusBadge = `<span class="bi-badge" style="background: rgba(0,210,255,0.15); color: #00d2ff; border: 1px solid #00d2ff; font-size: 0.65rem;">INDEXING...</span>`;
+                statusBadge = `<span class="ds-status-pill indexing" title="Currently indexing chunks"><span class="ds-status-dot pulse"></span>INDEXING...</span>`;
             } else {
-                statusBadge = `<span class="bi-badge" style="background: rgba(150,150,150,0.15); color: #aaa; border: 1px solid #666; font-size: 0.65rem;">UNINDEXED</span>`;
+                statusBadge = `<span class="ds-status-pill unindexed" title="Ready to index"><span class="ds-status-dot"></span>UNINDEXED</span>`;
             }
 
             html += `
                 <div class="library-card ${isCur ? 'active-dataset' : ''}" id="libCard_${ds.id}">
                     <div class="library-card-header">
                         <div class="library-card-title-group" title="${escapeHtml(ds.original_filename)}">
-                            <span class="library-type-badge ${ext}">${ext.toUpperCase()}</span>
+                            ${fileIconSvg}
                             <span class="library-card-name" onclick="openSavedDataset('${ds.id}')">${escapeHtml(ds.original_filename)}</span>
+                            <span class="library-type-badge ${ext}">${ext.toUpperCase()}</span>
                         </div>
                         ${statusBadge}
                     </div>
                     <div class="library-card-meta">
-                        <span>📊 ${countInfo}</span>
-                        <span>⏱️ ${dateStr}</span>
+                        <span class="meta-item">
+                            <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18M3 15h18M9 3v18"></path></svg>
+                            ${countInfo}
+                        </span>
+                        <span class="meta-item">
+                            <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            ${dateStr}
+                        </span>
                     </div>
                     <div class="library-card-actions">
                         <button type="button" class="lib-action-btn" onclick="openSavedDataset('${ds.id}')" title="Set as active working dataset">OPEN</button>
                         <button type="button" class="lib-action-btn" onclick="reindexDataset('${ds.id}')" title="Index or reindex for RAG intelligence">INDEX</button>
                         <button type="button" class="lib-action-btn" onclick="viewDatasetReport('${ds.id}')" title="View Intelligence Dossier">REPORT</button>
                         <button type="button" class="lib-action-btn" onclick="reanalyzeSavedDataset('${ds.id}')" title="Rerun neural analysis engine">REANALYZE</button>
-                        <button type="button" class="lib-action-btn delete-btn" onclick="deleteSavedDataset('${ds.id}')" title="Delete dataset and history">🗑️</button>
+                        <button type="button" class="lib-action-btn delete-btn" onclick="deleteSavedDataset('${ds.id}')" title="Delete dataset and history">
+                            <svg class="delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        </button>
                     </div>
                 </div>
             `;
@@ -2682,9 +3347,13 @@ async function loadSavedDatasets(page = 1) {
     } catch (err) {
         console.warn('Error loading library:', err);
         container.innerHTML = `
-            <div class="library-empty-state">
-                <span class="empty-icon" style="color: var(--red);">⚠️</span>
-                <p class="empty-text" style="color: var(--red);">Failed to connect to local database library.</p>
+            <div class="library-empty-state library-error-state">
+                <div class="empty-icon-wrap error">
+                    <svg class="empty-illustration-svg" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                </div>
+                <h4 class="empty-title" style="color: var(--red);">Connection Failure</h4>
+                <p class="empty-text">Failed to connect to local database library.</p>
+                <button type="button" class="library-retry-btn" onclick="loadSavedDatasets()">RETRY</button>
             </div>
         `;
     }
@@ -2737,7 +3406,7 @@ async function openSavedDataset(datasetId) {
             });
         }
 
-        logTerminal(`Dataset '${ds.original_filename}' activated in VANTIQ workspace.`, 'jarvis');
+        logTerminal(`Dataset '${ds.original_filename}' activated in SARTHI workspace.`, 'jarvis');
         jarvisSpeak(`Loaded saved dataset ${ds.original_filename}.`);
         loadSavedDatasets(libraryCurrentPage);
     } catch (err) {
@@ -2850,7 +3519,7 @@ function renderHistoryPane(report) {
         <div class="bi-section-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h3 class="bi-section-heading" style="margin: 0;">HISTORICAL ANALYSIS RUNS</h3>
-                <button type="button" class="lib-action-btn" style="flex: 0 0 130px;" onclick="reanalyzeSavedDataset('${activeDatasetId}')">⚡ NEW ANALYSIS RUN</button>
+                <button type="button" class="lib-action-btn" style="flex: 0 0 130px;" onclick="reanalyzeSavedDataset('${activeDatasetId}')"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> NEW ANALYSIS RUN</button>
             </div>
             <p style="color: var(--text-muted); font-size: 0.74rem;">Every analysis run is preserved with independent timestamps and engine versions.</p>
             <div id="modalHistoryContainer" style="margin-top: 10px;">
@@ -3764,10 +4433,10 @@ async function onSyncPurposeChange() {
     // Update Commit button label
     const commitBtn = document.getElementById('commitImportBtn');
     if (commitBtn) {
-        if (currentSyncPurpose === 'purchases') commitBtn.textContent = '⚡ CONFIRM & COMMIT PURCHASES LEDGER';
-        else if (currentSyncPurpose === 'sales') commitBtn.textContent = '⚡ CONFIRM & COMMIT SALES LEDGER';
-        else if (currentSyncPurpose === 'inventory_adjustments') commitBtn.textContent = '⚡ CONFIRM & COMMIT STOCK ADJUSTMENTS';
-        else commitBtn.textContent = '⚡ CONFIRM & COMMIT TO CATALOGUE';
+        if (currentSyncPurpose === 'purchases') commitBtn.textContent = 'CONFIRM & COMMIT PURCHASES LEDGER';
+        else if (currentSyncPurpose === 'sales') commitBtn.textContent = 'CONFIRM & COMMIT SALES LEDGER';
+        else if (currentSyncPurpose === 'inventory_adjustments') commitBtn.textContent = 'CONFIRM & COMMIT STOCK ADJUSTMENTS';
+        else commitBtn.textContent = 'CONFIRM & COMMIT TO CATALOGUE';
     }
 
     await loadMappingForPurpose(currentSyncPurpose);
@@ -4020,3 +4689,494 @@ function downloadMappingErrors() {
 
 
 
+
+
+// ==========================================================================
+// SARTHI CONVERSATIONAL AI & WORKSPACE STATE ENGINE
+// ==========================================================================
+
+let currentAppState = 'landing'; // 'landing' | 'chat'
+let activeSessionId = null;
+let currentAttachedFile = null;
+
+// Initialize Workspace States & Conversational Engine
+function initConversationalWorkspace() {
+    const mainContainer = document.getElementById('mainContainer');
+    const landingSlot = document.getElementById('landingComposerSlot');
+    const composer = document.getElementById('promptComposerContainer');
+    const input = document.getElementById('commandInput');
+
+    // Mount composer initially into landing slot
+    if (landingSlot && composer && composer.parentElement !== landingSlot) {
+        landingSlot.appendChild(composer);
+    }
+
+    // Auto-resizing textarea & keyboard submission
+    if (input) {
+        input.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleCommandSubmit(e);
+            }
+        });
+    }
+
+    // Drag and drop onto composer or workspace
+    initComposerDragAndDrop();
+
+    // Render initial conversation history
+    renderChatHistoryList();
+
+    // Set initial landing state
+    setAppState('landing');
+}
+
+// Switch between State A (Landing) and State B (Chat)
+function setAppState(state) {
+    currentAppState = state;
+    const mainContainer = document.getElementById('mainContainer');
+    const landingHero = document.getElementById('landingHeroContainer');
+    const chatWorkspace = document.getElementById('conversationWorkspace');
+    const landingSlot = document.getElementById('landingComposerSlot');
+    const bottomSlot = document.getElementById('bottomComposerSlot');
+    const composer = document.getElementById('promptComposerContainer');
+    const input = document.getElementById('commandInput');
+
+    if (!mainContainer || !landingHero || !chatWorkspace || !composer) return;
+
+    if (state === 'landing') {
+        mainContainer.classList.add('mode-landing');
+        mainContainer.classList.remove('mode-chat');
+        landingHero.style.display = 'flex';
+        chatWorkspace.style.display = 'none';
+        if (landingSlot && composer.parentElement !== landingSlot) {
+            landingSlot.appendChild(composer);
+        }
+    } else {
+        mainContainer.classList.remove('mode-landing');
+        mainContainer.classList.add('mode-chat');
+        landingHero.style.display = 'none';
+        chatWorkspace.style.display = 'flex';
+        if (bottomSlot && composer.parentElement !== bottomSlot) {
+            bottomSlot.appendChild(composer);
+        }
+        scrollConversationToBottom();
+    }
+
+    if (input) {
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+// Start New Conversation
+function startNewConversation() {
+    activeSessionId = null;
+    currentAttachedFile = null;
+
+    const stream = document.getElementById('conversationStream');
+    if (stream) stream.innerHTML = '';
+
+    const titleEl = document.getElementById('activeChatTitle');
+    if (titleEl) titleEl.textContent = 'Business Intelligence Query';
+
+    cancelFileSelection();
+
+    const input = document.getElementById('commandInput');
+    if (input) {
+        input.value = '';
+        input.style.height = 'auto';
+    }
+
+    setAppState('landing');
+    renderChatHistoryList();
+}
+
+// Trigger Hidden File Input from Composer
+function triggerFileInput() {
+    const input = document.getElementById('businessFileInput');
+    if (input) input.click();
+}
+
+// Handle File Selection for Composer
+function handleFileSelectionForComposer(file) {
+    if (!file) return;
+    currentAttachedFile = file;
+
+    const pill = document.getElementById('composerAttachmentPill');
+    const nameEl = document.getElementById('selectedFileName');
+    const sizeEl = document.getElementById('selectedFileSize');
+    const statusEl = document.getElementById('selectedFileStatus');
+
+    if (pill) pill.style.display = 'flex';
+    if (nameEl) nameEl.textContent = file.name;
+    if (sizeEl) sizeEl.textContent = formatBytes(file.size);
+    if (statusEl) statusEl.textContent = 'Attached';
+}
+
+// Cancel Attachment
+function cancelFileSelection() {
+    currentAttachedFile = null;
+    const pill = document.getElementById('composerAttachmentPill');
+    if (pill) pill.style.display = 'none';
+
+    const input = document.getElementById('businessFileInput');
+    if (input) input.value = '';
+
+    const origCard = document.getElementById('selectedFileCard');
+    if (origCard) origCard.style.display = 'none';
+    const importBtn = document.getElementById('importBtn');
+    if (importBtn) importBtn.disabled = true;
+}
+
+// Handle Suggestion Card Click
+function handleSuggestionClick(queryText) {
+    const input = document.getElementById('commandInput');
+    if (input) {
+        input.value = queryText;
+    }
+    const fakeEvent = new Event('submit', { cancelable: true });
+    handleCommandSubmit(fakeEvent);
+}
+
+// Safe Markdown Parser
+function renderMarkdown(raw) {
+    if (!raw) return '';
+    let html = escapeHtml(raw);
+
+    // Code blocks (fenced ```...```)
+    html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Tables
+    const tableRegex = /((?:^|\n)\|[^\n]+\|\r?\n\|[-:\s|]+\|\r?\n(?:\|[^\n]+\|\r?\n?)+)/g;
+    html = html.replace(tableRegex, (match) => {
+        const lines = match.trim().split('\n');
+        if (lines.length < 3) return match;
+        const headers = lines[0].split('|').map(c => c.trim()).filter(c => c !== '');
+        const rows = lines.slice(2).map(l => l.split('|').map(c => c.trim()).filter(c => c !== ''));
+        let ths = headers.map(h => `<th>${h}</th>`).join('');
+        let trs = rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('');
+        return `<div class="chat-table-wrap"><table class="chat-markdown-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
+    });
+
+    // Headers
+    html = html.replace(/^### (.*$)/gim, '<h4>$1</h4>');
+    html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^# (.*$)/gim, '<h3>$1</h3>');
+
+    // Bold & Italic
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    // Bullet lists
+    html = html.replace(/^\s*[-*]\s+(.*)$/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+    html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // Numbered lists
+    html = html.replace(/^\s*\d+\.\s+(.*)$/gim, '<li class="num-li">$1</li>');
+
+    // Paragraph line breaks
+    html = html.replace(/\n\n+/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
+    if (!html.startsWith('<h') && !html.startsWith('<div') && !html.startsWith('<pre') && !html.startsWith('<ul>')) {
+        html = '<p>' + html + '</p>';
+    }
+    return html;
+}
+
+// Conversation Stream Manager
+function appendChatMessage(role, text, meta = {}) {
+    const stream = document.getElementById('conversationStream');
+    if (!stream) return;
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `chat-msg chat-msg-${role}`;
+
+    if (role === 'user') {
+        let attachmentHtml = '';
+        if (meta.file) {
+            attachmentHtml = `
+                <div class="chat-user-attachment">
+                    <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    <span>${escapeHtml(meta.file)}</span>
+                </div>
+            `;
+        }
+        msgDiv.innerHTML = `
+            <div class="chat-user-bubble">
+                ${attachmentHtml}
+                <div class="chat-user-text">${escapeHtml(text)}</div>
+            </div>
+        `;
+    } else {
+        // SARTHI Assistant Message
+        const markdownHtml = renderMarkdown(text);
+
+        // Action pills (Reports, Catalogue, Dossier)
+        let actionsHtml = '';
+        if (meta.action && (meta.action.startsWith('bi_') || meta.action.startsWith('catalogue_') || meta.action.startsWith('dataset_') || meta.action.startsWith('inventory_') || meta.action.startsWith('product_'))) {
+            let pills = [];
+            if (meta.action.startsWith('bi_')) {
+                pills.push(`<button type="button" class="chat-action-pill" onclick="openBusinessInsights()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> OPEN DOSSIER</button>`);
+                pills.push(`<button type="button" class="chat-action-pill" onclick="launchReport()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> LAUNCH REPORT</button>`);
+            }
+            if (meta.action.startsWith('catalogue_') || meta.action.startsWith('inventory_') || meta.action.startsWith('product_')) {
+                pills.push(`<button type="button" class="chat-action-pill" onclick="openCatalogueModal()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg> PRODUCT CATALOGUE</button>`);
+            }
+            if (meta.action.startsWith('dataset_')) {
+                pills.push(`<button type="button" class="chat-action-pill" onclick="toggleRightSidebar(true)"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg> SAVED DATA LIBRARY</button>`);
+            }
+            if (pills.length > 0) {
+                actionsHtml = `<div class="chat-actions-row">${pills.join('')}</div>`;
+            }
+        }
+
+        // Follow up chips
+        let followUpsHtml = '';
+        if (meta.follow_ups && meta.follow_ups.length > 0) {
+            const chips = meta.follow_ups.map(q => `<button type="button" class="chat-followup-chip" onclick="handleSuggestionClick('${escapeHtml(q).replace(/'/g, "\\'")}')">${escapeHtml(q)}</button>`).join('');
+            followUpsHtml = `
+                <div class="chat-followups-container">
+                    <span class="chat-followup-label">SUGGESTED NEXT INQUIRIES:</span>
+                    <div class="chat-followup-chips">${chips}</div>
+                </div>
+            `;
+        }
+
+        // Meta row with copy & speak buttons
+        const modelLabel = meta.model || 'qwen3:4b-instruct';
+        const latencyLabel = meta.latency ? ` • Latency: ${meta.latency}s` : '';
+        const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+
+        msgDiv.innerHTML = `
+            <div class="chat-avatar">
+                <img src="/sarthi-logo.png" alt="SARTHI">
+            </div>
+            <div class="chat-body" id="${msgId}">
+                <div class="chat-markdown">${markdownHtml}</div>
+                ${actionsHtml}
+                ${followUpsHtml}
+                <div class="chat-meta-row">
+                    <div class="chat-meta-tag">
+                        <span>SARTHI Core</span>
+                        <span>• ${escapeHtml(modelLabel)}${latencyLabel}</span>
+                        <span>• Local AI</span>
+                    </div>
+                    <div class="chat-ctrl-btns">
+                        <button type="button" class="chat-ctrl-btn" onclick="copyChatMessage('${msgId}')" title="Copy response to clipboard">
+                            <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+                        </button>
+                        <button type="button" class="chat-ctrl-btn" onclick="speakChatMessage('${msgId}')" title="Read response aloud">
+                            <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    stream.appendChild(msgDiv);
+    scrollConversationToBottom();
+
+    // Persist to session
+    saveMessageToSession(role, text, meta);
+}
+
+// Copy message text
+function copyChatMessage(containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const text = el.querySelector('.chat-markdown') ? el.querySelector('.chat-markdown').innerText : el.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = el.querySelector('.chat-ctrl-btn');
+        if (btn) {
+            btn.style.color = '#10b981';
+            setTimeout(() => { btn.style.color = ''; }, 1500);
+        }
+    });
+}
+
+// Speak message text
+function speakChatMessage(containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const text = el.querySelector('.chat-markdown') ? el.querySelector('.chat-markdown').innerText : el.innerText;
+    sarthiSpeak(text);
+}
+
+// Thinking indicator controls
+function showChatThinking(msg = 'SARTHI is analyzing business data and telemetry...') {
+    const indicator = document.getElementById('chatThinkingIndicator');
+    if (!indicator) return;
+    const label = indicator.querySelector('.thinking-label');
+    if (label) label.textContent = msg;
+    indicator.style.display = 'flex';
+    scrollConversationToBottom();
+}
+
+function hideChatThinking() {
+    const indicator = document.getElementById('chatThinkingIndicator');
+    if (indicator) indicator.style.display = 'none';
+}
+
+function scrollConversationToBottom() {
+    const stream = document.getElementById('conversationStream');
+    if (stream) {
+        stream.scrollTop = stream.scrollHeight;
+    }
+}
+
+// Conversation Sessions Persistence
+function getChatSessions() {
+    try {
+        const raw = localStorage.getItem('sarthi_chat_sessions');
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveChatSessions(sessions) {
+    try {
+        localStorage.setItem('sarthi_chat_sessions', JSON.stringify(sessions));
+    } catch (e) {}
+}
+
+function saveMessageToSession(role, text, meta = {}) {
+    let sessions = getChatSessions();
+    let current = sessions.find(s => s.id === activeSessionId);
+    if (!current) {
+        const title = text.length > 36 ? text.substring(0, 36) + '...' : text;
+        activeSessionId = 'sess_' + Date.now();
+        current = {
+            id: activeSessionId,
+            title: title,
+            createdAt: new Date().toISOString(),
+            messages: []
+        };
+        sessions.unshift(current);
+        const titleEl = document.getElementById('activeChatTitle');
+        if (titleEl) titleEl.textContent = title;
+    }
+
+    current.messages.push({
+        role: role,
+        text: text,
+        meta: meta,
+        timestamp: new Date().toISOString()
+    });
+
+    saveChatSessions(sessions);
+    renderChatHistoryList();
+}
+
+function loadConversationSession(sessionId) {
+    const sessions = getChatSessions();
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    activeSessionId = session.id;
+    const stream = document.getElementById('conversationStream');
+    if (stream) stream.innerHTML = '';
+
+    const titleEl = document.getElementById('activeChatTitle');
+    if (titleEl) titleEl.textContent = session.title;
+
+    setAppState('chat');
+
+    session.messages.forEach(m => {
+        appendChatMessage(m.role, m.text, m.meta || {});
+    });
+
+    renderChatHistoryList();
+}
+
+function deleteConversationSession(sessionId, e) {
+    if (e) e.stopPropagation();
+    let sessions = getChatSessions().filter(s => s.id !== sessionId);
+    saveChatSessions(sessions);
+
+    if (activeSessionId === sessionId) {
+        startNewConversation();
+    } else {
+        renderChatHistoryList();
+    }
+}
+
+function clearAllChatHistory() {
+    if (!confirm('Are you sure you want to clear your conversation history?')) return;
+    saveChatSessions([]);
+    startNewConversation();
+}
+
+function onSearchChatHistory(query) {
+    renderChatHistoryList((query || '').trim().toLowerCase());
+}
+
+function renderChatHistoryList(filterQuery = '') {
+    const container = document.getElementById('conversationHistoryList');
+    if (!container) return;
+
+    let sessions = getChatSessions();
+    if (filterQuery) {
+        sessions = sessions.filter(s => (s.title || '').toLowerCase().includes(filterQuery));
+    }
+
+    if (sessions.length === 0) {
+        container.innerHTML = `<div class="history-empty-text">No conversations yet</div>`;
+        return;
+    }
+
+    container.innerHTML = sessions.map(s => `
+        <div class="history-item ${s.id === activeSessionId ? 'active' : ''}" onclick="loadConversationSession('${s.id}')" title="${escapeHtml(s.title)}">
+            <div class="history-item-left">
+                <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <span class="history-item-title">${escapeHtml(s.title)}</span>
+            </div>
+            <button type="button" class="history-item-delete" onclick="deleteConversationSession('${s.id}', event)" title="Delete conversation">&times;</button>
+        </div>
+    `).join('');
+}
+
+// Drag and drop onto composer or workspace
+function initComposerDragAndDrop() {
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (['xlsx', 'xls', 'csv', 'pdf'].includes(ext)) {
+                handleFileSelectionForComposer(file);
+                if (typeof handleFileSelection === 'function') {
+                    handleFileSelection(file);
+                }
+            }
+        }
+    });
+
+    const fileInput = document.getElementById('businessFileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handleFileSelectionForComposer(e.target.files[0]);
+                if (typeof handleFileSelection === 'function') {
+                    handleFileSelection(e.target.files[0]);
+                }
+            }
+        });
+    }
+}
