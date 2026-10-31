@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SARTHI — AI-Powered Business Intelligence Assistant</title>
+    <meta name="description" content="VANTIQ: AI-Powered Business Intelligence Assistant for product pricing, inventory ledger, financial analytics, and natural-language intelligence. Your Business. Your Data. Your Intelligence.">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="hud-overlay"></div>
+    <div class="scanlines"></div>
+
+    <header class="hud-header">
+        <div class="header-left">
+            <div class="reactor-mini">
+                <img src="/UI/powersource.gif" alt="Arc Reactor" class="mini-arc" id="miniArc">
+            </div>
+            <div class="brand">
+                <h1 class="logo-text">VANTIQ</h1>
+                <span class="sub-text">AI BUSINESS INTELLIGENCE // YOUR BUSINESS. YOUR DATA. YOUR INTELLIGENCE.</span>
+            </div>
+        </div>
+
+        <div class="header-center">
+            <div class="status-badge" id="systemStatusBadge">
+                <span class="status-dot"></span>
+                <span id="statusText">SYSTEM ONLINE</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <div class="telemetry-chip">
+                <span class="chip-label">SYSTEM DATE</span>
+                <span class="chip-value" id="hudDate">-- / -- / ----</span>
+            </div>
+            <div class="telemetry-chip">
+                <span class="chip-label">STARK TIME</span>
+                <span class="chip-value highlight" id="hudTime">--:--:--</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="hud-main">
+        <!-- Left Panel: Navigation & Telemetry -->
+        <aside class="panel left-panel">
+            <div class="panel-header">
+                <h2>OPERATIONS CONSOLE</h2>
+                <span class="panel-tag">ENTERPRISE</span>
+            </div>
+
+            <!-- Organized Enterprise Navigation -->
+            <nav class="nav-sidebar-menu" aria-label="Main Navigation">
+                <div class="nav-group">
+                    <span class="nav-group-title">OVERVIEW</span>
+                    <button class="action-btn" id="btnSystemStatus" onclick="showSystemStatus()" title="Display Real-Time Subsystem Telemetry">
+                        <span class="btn-icon">⚡</span>
+                        <span class="btn-label">SYSTEM STATUS</span>
+                    </button>
+                    <button class="action-btn" id="btnBusinessInsights" onclick="openBusinessInsights()" title="Open Business Intelligence & Analytics Dossier">
+                        <span class="btn-icon">📊</span>
+                        <span class="btn-label">BUSINESS INSIGHTS</span>
+                    </button>
+                </div>
+
+                <div class="nav-group">
+                    <span class="nav-group-title">OPERATIONS</span>
+                    <button class="action-btn" id="btnCatalogue" onclick="openCatalogueModal()" title="Open Product Catalogue & Inventory Management">
+                        <span class="btn-icon">📦</span>
+                        <span class="btn-label">PRODUCT CATALOGUE</span>
+                    </button>
+                    <button class="action-btn" id="btnSuppliersPurchases" onclick="openSuppliersPurchases()" title="Open Supplier Directory & Procurement Ledger">
+                        <span class="btn-icon">🏢</span>
+                        <span class="btn-label">SUPPLIERS & PURCHASES</span>
+                    </button>
+                </div>
+
+                <div class="nav-group">
+                    <span class="nav-group-title">INTELLIGENCE</span>
+                    <button class="action-btn" id="btnDocumentLibrary" onclick="openDocumentLibrary()" title="Open Saved Document & Dataset Library">
+                        <span class="btn-icon">📁</span>
+                        <span class="btn-label">DOCUMENT LIBRARY</span>
+                    </button>
+                </div>
+            </nav>
+
+            <!-- Persistent Catalogue & Inventory Summary Telemetry -->
+            <div class="catalogue-hud-card" id="catalogueHudCard">
+                <div class="catalogue-hud-header">
+                    <span class="cat-hud-title">PRODUCT & STOCK TELEMETRY</span>
+                    <button type="button" class="cat-open-btn" onclick="openCatalogueModal()" title="Open Product Catalogue">MANAGE ↗</button>
+                </div>
+                <div class="cat-hud-grid">
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">ACTIVE PRODS</span>
+                        <span class="cat-stat-val cyan" id="hudActiveProdsVal">0</span>
+                    </div>
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">STOCK UNITS</span>
+                        <span class="cat-stat-val" id="hudTotalStockVal">0</span>
+                    </div>
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">LOW STOCK</span>
+                        <span class="cat-stat-val amber" id="hudLowStockVal">0</span>
+                    </div>
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">OUT OF STOCK</span>
+                        <span class="cat-stat-val red" id="hudOutOfStockVal">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Local AI Neural Core (Ollama qwen3:4b-instruct) Telemetry -->
+            <div class="catalogue-hud-card local-ai-hud-card" id="localAiHudCard">
+                <div class="catalogue-hud-header">
+                    <span class="cat-hud-title"><span class="ai-pulse-dot" id="llmPulseDot">●</span> LOCAL AI NEURAL CORE</span>
+                    <span class="llm-model-badge" id="llmModelBadge">qwen3:4b</span>
+                </div>
+                <div class="cat-hud-grid">
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">AI STATUS</span>
+                        <span class="cat-stat-val cyan" id="hudLlmStatusVal">READY</span>
+                    </div>
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">LATENCY</span>
+                        <span class="cat-stat-val" id="hudLlmLatencyVal">--</span>
+                    </div>
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">INFERENCE</span>
+                        <span class="cat-stat-val" id="hudLlmModeVal">LOCAL</span>
+                    </div>
+                    <div class="cat-hud-stat">
+                        <span class="cat-stat-label">CLOUD APIS</span>
+                        <span class="cat-stat-val green" id="hudLlmCloudVal">0 (OFFLINE)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hardware Telemetry Gauges -->
+            <div class="gauge-container">
+                <div class="gauge-header-title">SYSTEM HARDWARE</div>
+                <div class="gauge-item">
+                    <div class="gauge-header">
+                        <span>CPU LOAD</span>
+                        <span id="cpuVal">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="bar-fill" id="cpuBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="gauge-item">
+                    <div class="gauge-header">
+                        <span>QUANTUM MEMORY</span>
+                        <span id="ramVal">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="bar-fill cyan" id="ramBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="gauge-item">
+                    <div class="gauge-header">
+                        <span>ARC REACTOR (BATTERY)</span>
+                        <span id="batteryVal">Detecting...</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="bar-fill gold" id="batteryBar" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hud-radar-box">
+                <img src="/UI/ringJar.gif" alt="Rotating Ring" class="hud-gif ring-radar">
+                <div class="radar-label" id="radarTelemetryLabel">SYSTEM ENGINE: ONLINE</div>
+            </div>
+        </aside>
+
+        <!-- Center Core: AI Workspace & Hero Deck -->
+        <section class="center-core">
+            <div class="center-hero-workspace">
+                <!-- Left Side: Interactive Arc Reactor & Visual Hero -->
+                <div class="hologram-stage">
+                    <div class="reactor-interaction-col">
+                        <div class="holo-ring">
+                            <img src="/UI/circle.gif" alt="Target Ring" class="circle-hud">
+                        </div>
+                        <div class="arc-core-interactive" id="coreTrigger" onclick="toggleVoiceListening()" title="Click to engage voice listening">
+                            <img src="/UI/powersource.gif" alt="Central Arc Reactor" class="central-reactor" id="mainReactor">
+                            <div class="core-glow"></div>
+                            <div class="pulse-indicator" id="voiceIndicator">CLICK TO ENGAGE SPEECH</div>
+                        </div>
+                    </div>
+
+                    <div class="ironman-avatar-box">
+                        <img src="/UI/ironman1.gif" alt="Iron Man Armor" class="ironman-armor">
+                    </div>
+                </div>
+
+                <!-- Right Side: Business Data Import Module (Relocated to Upper Center Workspace) -->
+                <div class="import-module-box" id="importModuleBox">
+                    <div class="import-header-row">
+                        <span class="import-title">BUSINESS DATA IMPORT</span>
+                        <div class="format-badges">
+                            <span class="format-badge">XLSX</span>
+                            <span class="format-badge">XLS</span>
+                            <span class="format-badge">CSV</span>
+                            <span class="format-badge">PDF</span>
+                        </div>
+                    </div>
+                    <p class="import-desc">Import business data from Excel spreadsheets, CSV files, and PDF documents.</p>
+
+                    <!-- Drag & Drop Zone -->
+                    <div class="drop-zone" id="dropZone">
+                        <div class="drop-zone-content">
+                            <span class="drop-icon">📁</span>
+                            <div class="drop-text-col">
+                                <span class="drop-text">Drag & drop files here or <span class="browse-link">browse</span></span>
+                                <span class="drop-subtext">Max size: 10 MB (XLSX, XLS, CSV, PDF)</span>
+                            </div>
+                        </div>
+                        <input type="file" id="businessFileInput" accept=".xlsx,.xls,.csv,.pdf" class="hidden-file-input">
+                    </div>
+
+                    <!-- Selected File Metadata Card (Initially hidden) -->
+                    <div class="selected-file-card" id="selectedFileCard" style="display: none;">
+                        <div class="file-icon-badge" id="fileTypeIcon">📄</div>
+                        <div class="file-info-col">
+                            <span class="selected-file-name" id="selectedFileName">filename.xlsx</span>
+                            <div class="selected-file-meta">
+                                <span id="selectedFileSize">0 KB</span>
+                                <span class="meta-dot">•</span>
+                                <span class="status-indicator-text" id="selectedFileStatus">Ready to import</span>
+                            </div>
+                        </div>
+                        <button type="button" class="remove-file-btn" id="removeFileBtn" title="Remove File" onclick="cancelFileSelection()">✕</button>
+                    </div>
+
+                    <!-- Actions Row -->
+                    <div class="import-actions-row">
+                        <button type="button" class="import-btn" id="importBtn" onclick="submitDataImport()" disabled>
+                            <span class="import-btn-text">IMPORT DATA</span>
+                        </button>
+                        <button type="button" class="cancel-btn" id="cancelBtn" onclick="cancelFileSelection()" style="display: none;">
+                            CANCEL
+                        </button>
+                    </div>
+
+                    <!-- Processing Spinner (Initially hidden) -->
+                    <div class="import-processing" id="importProcessing" style="display: none;">
+                        <div class="tactical-spinner"></div>
+                        <span class="processing-text">EXTRACTING TABULAR & TEXT MATRIX...</span>
+                    </div>
+
+                    <!-- Error Banner (Initially hidden) -->
+                    <div class="import-error-banner" id="importErrorBanner" style="display: none;">
+                        <span class="error-icon">⚠️</span>
+                        <span class="error-text" id="importErrorText">An error occurred.</span>
+                    </div>
+
+                    <!-- Extracted Data Preview & Summary Result Area (Initially hidden) -->
+                    <div class="import-result-viewport" id="importResultViewport" style="display: none;">
+                        <div class="result-header">
+                            <span class="result-title">EXTRACTION PREVIEW</span>
+                            <div class="result-header-btns">
+                                <button type="button" class="map-catalogue-btn" id="mapCatalogueBtn" onclick="openSpreadsheetMappingModal()">📦 MAP TO PRODUCT CATALOGUE</button>
+                                <button type="button" class="launch-bi-btn" id="launchReportBtn" onclick="launchReport()">⚡ LAUNCH REPORT</button>
+                                <button type="button" class="close-preview-btn" onclick="closeImportPreview()">CLOSE</button>
+                            </div>
+                        </div>
+                        <div class="result-summary-bar" id="resultSummaryBar">
+                            <!-- Summary metrics inserted by JS -->
+                        </div>
+                        <div class="result-sheets-tabs" id="resultSheetsTabs">
+                            <!-- Sheet selector tabs inserted by JS -->
+                        </div>
+                        <div class="result-preview-content" id="resultPreviewContent">
+                            <!-- Extracted table or text inserted by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Voice & Terminal Console -->
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <span class="term-title">> SARTHI NEURAL CONSOLE</span>
+                    <span class="term-status" id="listenerStatus">VOICE ENGINE READY</span>
+                </div>
+
+                <div class="terminal-log" id="terminalLog">
+                    <div class="log-entry system">[SYSTEM INIT] SARTHI Neural Core initialized successfully.</div>
+                    <div class="log-entry system">[SYSTEM INIT] Connecting to local intelligence telemetry...</div>
+                    <div class="log-entry jarvis">[SARTHI] Greetings. SARTHI is online and ready for your business inquiries. Type your business question or use the microphone to speak.</div>
+                </div>
+
+                <form class="command-bar" id="commandForm" onsubmit="handleCommandSubmit(event)" title="Type your business question or use the microphone to speak.">
+                    <span class="prompt-arrow">></span>
+                    <input type="text" id="commandInput" placeholder="Ask SARTHI about inventory, product pricing, suppliers, sales, or business performance..." title="Type your business question or use the microphone to speak." autocomplete="off">
+                    <button type="button" class="mic-toggle-btn" id="micBtn" onclick="toggleVoiceListening()" title="Type your business question or use the microphone to speak.">
+                        <span id="micIcon">🎙️</span>
+                    </button>
+                    <button type="submit" class="send-btn" id="sendBtn">EXECUTE</button>
+                </form>
+                <div class="console-guidance-bar" id="consoleGuidanceBar">
+                    <span class="guidance-helper-label" title="Type your business question or use the microphone to speak.">
+                        <span class="guidance-icon">💡</span> Type your business question or use the microphone to speak.
+                    </span>
+                    <div class="guidance-example-rotator" id="guidanceExampleRotator">
+                        <span class="example-rotator-label">EXAMPLES:</span>
+                        <span class="example-rotator-query" id="exampleRotatorQuery" onclick="setConsoleQuery(this.textContent)" title="Click to insert example query">Which products are currently low in stock?</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Dynamic Intelligence Deck -->
+        <aside class="panel right-panel">
+            <div class="panel-header">
+                <h2>TACTICAL INTEL</h2>
+                <span class="panel-tag">LIVE.FEED</span>
+            </div>
+
+            <!-- Dynamic Card Area -->
+            <div class="intel-viewport" id="intelViewport">
+                <div class="intel-card default-card">
+                    <h3 class="card-title">STARK ARCHIVES</h3>
+                    <p class="card-desc">Select an operational module or use voice commands to access classified system intelligence.</p>
+                    
+                    <div class="data-row">
+                        <span class="label">OS PLATFORM:</span>
+                        <span class="val" id="platformVal">Windows 11</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="label">PROCESSOR:</span>
+                        <span class="val" id="procVal">AMD64 Multi-Core</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="label">LOCAL PORT:</span>
+                        <span class="val cyan">5000 (LOCAL HOST)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Persistent Saved Data Library Module -->
+            <div class="library-module-box" id="libraryModuleBox">
+                <div class="library-header-row">
+                    <span class="library-title">SAVED DATA LIBRARY</span>
+                    <span class="library-badge" id="libraryCountBadge">0 DATASETS</span>
+                </div>
+                <div class="library-toolbar">
+                    <div class="search-input-wrapper">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="librarySearchInput" class="library-search-input" placeholder="Search datasets..." oninput="onLibrarySearch(this.value)">
+                    </div>
+                    <select id="libraryTypeFilter" class="library-filter-select" onchange="onLibraryFilter(this.value)">
+                        <option value="">ALL FORMATS</option>
+                        <option value="xlsx">XLSX</option>
+                        <option value="xls">XLS</option>
+                        <option value="pdf">PDF</option>
+                    </select>
+                    <button type="button" class="library-refresh-btn" onclick="loadSavedDatasets()" title="Reload Library">🔄</button>
+                </div>
+
+                <!-- Datasets List -->
+                <div class="library-list-viewport" id="libraryListContainer">
+                    <div class="library-empty-state">
+                        <span class="empty-icon">📂</span>
+                        <p class="empty-text">No saved datasets yet. Import an Excel or PDF file to begin.</p>
+                    </div>
+                </div>
+
+                <!-- Pagination Bar -->
+                <div class="library-pagination-row" id="libraryPaginationRow" style="display: none;">
+                    <button type="button" class="lib-page-btn" id="libPrevBtn" onclick="changeLibraryPage(-1)">◀ PREV</button>
+                    <span class="lib-page-indicator" id="libPageIndicator">PAGE 1 / 1</span>
+                    <button type="button" class="lib-page-btn" id="libNextBtn" onclick="changeLibraryPage(1)">NEXT ▶</button>
+                </div>
+            </div>
+
+            <div class="hud-audio-wave">
+                <img src="/UI/lines1.gif" alt="Audio Waves" class="wave-gif">
+            </div>
+        </aside>
+    </main>
+
+    <!-- Dedicated Business Intelligence HUD Modal -->
+    <div class="bi-modal-overlay" id="biModal" style="display: none;">
+        <div class="bi-modal-container">
+            <!-- Modal Header -->
+            <div class="bi-modal-header">
+                <div class="bi-header-title-group">
+                    <span class="bi-reactor-glow">⚡</span>
+                    <div>
+                        <h2 class="bi-title" id="biDocTitle">BUSINESS INTELLIGENCE DOSSIER</h2>
+                        <div class="bi-meta-sub">
+                            <span class="bi-badge" id="biClassificationBadge">GENERAL TABULAR</span>
+                            <span class="bi-meta-text" id="biDocTimestamp">--:--:--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bi-header-actions">
+                    <div class="export-group">
+                        <span class="export-label">EXPORT:</span>
+                        <button type="button" class="export-btn" onclick="exportCurrentReport('html')">HTML</button>
+                        <button type="button" class="export-btn" onclick="exportCurrentReport('csv')">CSV</button>
+                        <button type="button" class="export-btn" onclick="exportCurrentReport('json')">JSON</button>
+                    </div>
+                    <button type="button" class="bi-close-btn" onclick="closeBIModal()" title="Close Intelligence Dossier">✕</button>
+                </div>
+            </div>
+
+            <!-- Top KPI Cards Row -->
+            <div class="bi-kpi-grid" id="biKpiGrid">
+                <!-- Injected via JavaScript -->
+            </div>
+
+            <!-- Navigation Tab Bar -->
+            <div class="bi-nav-tabs">
+                <button type="button" class="bi-tab-btn active" data-tab="overview" onclick="switchBITab('overview')">OVERVIEW & INSIGHTS</button>
+                <button type="button" class="bi-tab-btn" data-tab="quality" onclick="switchBITab('quality')">DATA QUALITY & AUDIT</button>
+                <button type="button" class="bi-tab-btn" data-tab="stats" onclick="switchBITab('stats')">STATISTICAL ANALYSIS</button>
+                <button type="button" class="bi-tab-btn" data-tab="pricing" onclick="switchBITab('pricing')">PRICING & MARGINS</button>
+                <button type="button" class="bi-tab-btn" data-tab="inventory" onclick="switchBITab('inventory')">INVENTORY</button>
+                <button type="button" class="bi-tab-btn" data-tab="sales" onclick="switchBITab('sales')">SALES & REVENUE</button>
+                <button type="button" class="bi-tab-btn" data-tab="suppliers" onclick="switchBITab('suppliers')">SUPPLIERS</button>
+                <button type="button" class="bi-tab-btn" data-tab="raw" onclick="switchBITab('raw')">RAW MATRIX PREVIEW</button>
+                <button type="button" class="bi-tab-btn" data-tab="history" onclick="switchBITab('history')">ANALYSIS RUNS</button>
+            </div>
+
+            <!-- Tab Content Panes -->
+            <div class="bi-tab-content-area" id="biTabContentArea">
+                <!-- Panes rendered via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- J.A.R.V.I.S. STEP 4 — PRODUCT CATALOGUE & INVENTORY MANAGEMENT -->
+    <!-- ============================================================== -->
+
+    <!-- Main Catalogue & Inventory HUD Modal -->
+    <div class="bi-modal-overlay" id="catalogueModal" style="display: none;">
+        <div class="bi-modal-container catalogue-container">
+            <!-- Modal Header -->
+            <div class="bi-modal-header">
+                <div class="bi-header-title-group">
+                    <span class="bi-reactor-glow">📦</span>
+                    <div>
+                        <h2 class="bi-title">PRODUCT CATALOGUE & INVENTORY MANAGEMENT</h2>
+                        <div class="bi-meta-sub">
+                            <span class="bi-badge" id="catActiveBadge">0 ACTIVE PRODUCTS</span>
+                            <span class="bi-meta-text" id="catTotalStockBadge">TOTAL STOCK: 0 UNITS</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bi-header-actions">
+                    <button type="button" class="cat-btn-primary" onclick="openAddProductModal()">+ ADD PRODUCT</button>
+                    <button type="button" class="cat-btn-secondary" onclick="loadCatalogueProducts()">🔄 REFRESH</button>
+                    <button type="button" class="bi-close-btn" onclick="closeCatalogueModal()" title="Close Catalogue">✕</button>
+                </div>
+            </div>
+
+            <!-- Telemetry summary cards row -->
+            <div class="cat-kpi-row" id="catKpiRow">
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">ACTIVE PRODUCTS</span>
+                    <span class="kpi-val cyan" id="catKpiActive">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">TOTAL STOCK UNITS</span>
+                    <span class="kpi-val" id="catKpiStock">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">LOW STOCK WARNING</span>
+                    <span class="kpi-val amber" id="catKpiLow">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">OUT OF STOCK</span>
+                    <span class="kpi-val red" id="catKpiOut">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">MISSING PRICING</span>
+                    <span class="kpi-val muted" id="catKpiMissingPrice">0</span>
+                </div>
+            </div>
+
+            <!-- Tab Bar -->
+            <div class="bi-nav-tabs">
+                <button type="button" class="bi-tab-btn active" id="catTabProducts" onclick="switchCatalogueTab('products')">ALL PRODUCTS</button>
+                <button type="button" class="bi-tab-btn" id="catTabInventory" onclick="switchCatalogueTab('inventory')">INVENTORY BALANCES</button>
+                <button type="button" class="bi-tab-btn" id="catTabMovements" onclick="switchCatalogueTab('movements')">STOCK MOVEMENTS HISTORY</button>
+            </div>
+
+            <!-- Controls Toolbar (Search, Filter, Sort) -->
+            <div class="cat-toolbar">
+                <div class="cat-toolbar-left">
+                    <input type="text" id="catSearchInput" class="cat-search-input" placeholder="Search by SKU, product name, category, brand..." oninput="onCatalogueSearch(this.value)">
+                    <select id="catCategoryFilter" class="cat-select" onchange="onCatalogueFilterChange()">
+                        <option value="">ALL CATEGORIES</option>
+                    </select>
+                    <select id="catStatusFilter" class="cat-select" onchange="onCatalogueFilterChange()">
+                        <option value="1">ACTIVE ONLY</option>
+                        <option value="">ALL STATUSES</option>
+                        <option value="0">INACTIVE ONLY</option>
+                    </select>
+                    <select id="catStockFilter" class="cat-select" onchange="onCatalogueFilterChange()">
+                        <option value="">ALL STOCK LEVELS</option>
+                        <option value="low">LOW STOCK ONLY</option>
+                        <option value="out">OUT OF STOCK ONLY</option>
+                    </select>
+                </div>
+                <div class="cat-toolbar-right">
+                    <span class="sort-label">SORT:</span>
+                    <select id="catSortBy" class="cat-select" onchange="onCatalogueSortChange()">
+                        <option value="name">Product Name</option>
+                        <option value="sku">SKU Code</option>
+                        <option value="selling_price">Selling Price</option>
+                        <option value="purchase_price">Purchase Cost</option>
+                        <option value="stock">Current Stock</option>
+                        <option value="updated_at">Last Update</option>
+                    </select>
+                    <select id="catSortOrder" class="cat-select" onchange="onCatalogueSortChange()">
+                        <option value="asc">ASC (▲)</option>
+                        <option value="desc">DESC (▼)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Tab 1: Products Table -->
+            <div class="cat-content-pane" id="catPaneProducts">
+                <div class="cat-table-wrapper" id="catTableWrapper">
+                    <table class="cat-table" id="catProductsTable">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>PRODUCT NAME</th>
+                                <th>CATEGORY</th>
+                                <th>SUPPLIER</th>
+                                <th>PURCHASE COST</th>
+                                <th>SELLING PRICE</th>
+                                <th>MARGIN %</th>
+                                <th>STOCK</th>
+                                <th>UNIT</th>
+                                <th>REORDER LVL</th>
+                                <th>STATUS</th>
+                                <th>ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="catProductsTbody">
+                            <!-- Injected by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Products Pagination -->
+                <div class="cat-pagination-row" id="catPaginationRow">
+                    <button type="button" class="lib-page-btn" id="catPrevBtn" onclick="changeCataloguePage(-1)">◀ PREV</button>
+                    <span class="lib-page-indicator" id="catPageIndicator">PAGE 1 / 1</span>
+                    <button type="button" class="lib-page-btn" id="catNextBtn" onclick="changeCataloguePage(1)">NEXT ▶</button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Inventory Balances Pane -->
+            <div class="cat-content-pane" id="catPaneInventory" style="display: none;">
+                <div class="cat-table-wrapper">
+                    <table class="cat-table">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>PRODUCT NAME</th>
+                                <th>CURRENT STOCK</th>
+                                <th>REORDER LEVEL</th>
+                                <th>UNIT</th>
+                                <th>STOCK STATUS</th>
+                                <th>LAST ADJUSTED</th>
+                                <th>QUICK ACTION</th>
+                            </tr>
+                        </thead>
+                        <tbody id="catInventoryTbody">
+                            <!-- Injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 3: Stock Movements History Pane -->
+            <div class="cat-content-pane" id="catPaneMovements" style="display: none;">
+                <div class="cat-table-wrapper">
+                    <table class="cat-table">
+                        <thead>
+                            <tr>
+                                <th>TIMESTAMP</th>
+                                <th>PRODUCT</th>
+                                <th>MOVEMENT TYPE</th>
+                                <th>DELTA</th>
+                                <th>BEFORE</th>
+                                <th>AFTER</th>
+                                <th>REASON</th>
+                                <th>REFERENCE</th>
+                            </tr>
+                        </thead>
+                        <tbody id="catMovementsTbody">
+                            <!-- Injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sub-Modal: Add / Edit Product -->
+    <div class="cat-submodal-overlay" id="productFormModal" style="display: none;">
+        <div class="cat-submodal-card">
+            <div class="cat-submodal-header">
+                <h3 id="productFormTitle">ADD PRODUCT TO CATALOGUE</h3>
+                <button type="button" class="bi-close-btn" onclick="closeProductFormModal()">✕</button>
+            </div>
+            <form id="productForm" onsubmit="handleProductFormSubmit(event)">
+                <input type="hidden" id="prodFormId">
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label>PRODUCT NAME *</label>
+                        <input type="text" id="prodFormName" required placeholder="e.g. Arc Capacitor Mark IV">
+                    </div>
+                    <div class="form-group">
+                        <label>SKU (PRODUCT CODE)</label>
+                        <input type="text" id="prodFormSku" placeholder="e.g. STARK-CAP-04">
+                    </div>
+                    <div class="form-group">
+                        <label>CATEGORY</label>
+                        <input type="text" id="prodFormCategory" placeholder="e.g. Energy Storage">
+                    </div>
+                    <div class="form-group">
+                        <label>BRAND</label>
+                        <input type="text" id="prodFormBrand" placeholder="e.g. Stark Tech">
+                    </div>
+                    <div class="form-group">
+                        <label>UNIT OF MEASUREMENT</label>
+                        <input type="text" id="prodFormUnit" value="piece" placeholder="piece, kg, litre, box">
+                    </div>
+                    <div class="form-group">
+                        <label>SUPPLIER</label>
+                        <select id="prodFormSupplier" class="cat-select">
+                            <option value="">No Supplier Assigned</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>PURCHASE COST (INR)</label>
+                        <input type="number" id="prodFormPurchasePrice" step="0.01" min="0" value="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label>SELLING PRICE (INR)</label>
+                        <input type="number" id="prodFormSellingPrice" step="0.01" min="0" value="0.00">
+                    </div>
+                    <div class="form-group" id="prodFormOpeningStockGroup">
+                        <label>OPENING STOCK QTY</label>
+                        <input type="number" id="prodFormOpeningStock" step="0.0001" min="0" value="0">
+                        <span class="form-hint">Initial balance recorded as opening movement atomically.</span>
+                    </div>
+                    <div class="form-group">
+                        <label>REORDER THRESHOLD</label>
+                        <input type="number" id="prodFormReorderLevel" step="0.0001" min="0" value="10">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>DESCRIPTION (OPTIONAL)</label>
+                        <textarea id="prodFormDescription" rows="2" placeholder="Product specifications, notes, or details..."></textarea>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="cat-btn-cancel" onclick="closeProductFormModal()">CANCEL</button>
+                    <button type="submit" class="cat-btn-submit" id="prodFormSubmitBtn">SAVE PRODUCT</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Sub-Modal: Stock Adjustment -->
+    <div class="cat-submodal-overlay" id="stockAdjustModal" style="display: none;">
+        <div class="cat-submodal-card">
+            <div class="cat-submodal-header">
+                <h3>RECORD INVENTORY STOCK MOVEMENT</h3>
+                <button type="button" class="bi-close-btn" onclick="closeStockAdjustModal()">✕</button>
+            </div>
+            <form id="stockAdjustForm" onsubmit="handleStockAdjustSubmit(event)">
+                <input type="hidden" id="adjustProdId">
+                <div class="adjust-header-banner">
+                    <div class="adjust-prod-name" id="adjustProdName">Product Name</div>
+                    <div class="adjust-stock-badge">CURRENT STOCK: <span id="adjustCurrentStock">0</span> <span id="adjustProdUnit">piece</span></div>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>MOVEMENT TYPE *</label>
+                        <select id="adjustMovementType" class="cat-select" onchange="onMovementTypeChange()" required>
+                            <option value="receipt">Stock Receipt (+)</option>
+                            <option value="adjustment">Stock Adjustment (±)</option>
+                            <option value="return">Customer Return (+)</option>
+                            <option value="sale">Recorded Sale (-)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label id="adjustDeltaLabel">QUANTITY DELTA (+ / -) *</label>
+                        <input type="number" id="adjustDelta" step="0.0001" required placeholder="e.g. 25" oninput="calculateAdjustPreview()">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>REASON FOR ADJUSTMENT *</label>
+                        <input type="text" id="adjustReason" required placeholder="e.g. Received shipment from supplier, Cycle count variance, Damaged in transit">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>REFERENCE (PO / INVOICE / TICKET)</label>
+                        <input type="text" id="adjustReference" placeholder="e.g. PO-8921, INV-2026-04">
+                    </div>
+                </div>
+
+                <div class="adjust-preview-box">
+                    <span>BEFORE: <strong id="previewBeforeQty">0</strong></span>
+                    <span>→</span>
+                    <span>DELTA: <strong id="previewDeltaQty">0</strong></span>
+                    <span>→</span>
+                    <span>NEW BALANCE: <strong id="previewAfterQty">0</strong></span>
+                </div>
+                <div class="adjust-error-alert" id="adjustErrorAlert" style="display: none;"></div>
+
+                <div class="form-actions">
+                    <button type="button" class="cat-btn-cancel" onclick="closeStockAdjustModal()">CANCEL</button>
+                    <button type="submit" class="cat-btn-submit" id="adjustSubmitBtn">COMMIT ADJUSTMENT</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Sub-Modal: Product Details & History Drawer -->
+    <div class="cat-submodal-overlay" id="productDetailModal" style="display: none;">
+        <div class="cat-submodal-card detail-card">
+            <div class="cat-submodal-header">
+                <div>
+                    <h3 id="detailProdName">Product Details</h3>
+                    <span class="detail-sku-badge" id="detailProdSku">SKU: ---</span>
+                </div>
+                <button type="button" class="bi-close-btn" onclick="closeProductDetailModal()">✕</button>
+            </div>
+            <div class="detail-body">
+                <!-- Financials & Margin KPI Grid -->
+                <div class="detail-kpi-grid">
+                    <div class="detail-kpi">
+                        <span class="label">PURCHASE COST</span>
+                        <span class="val" id="detailCost">0.00 INR</span>
+                    </div>
+                    <div class="detail-kpi">
+                        <span class="label">SELLING PRICE</span>
+                        <span class="val cyan" id="detailPrice">0.00 INR</span>
+                    </div>
+                    <div class="detail-kpi">
+                        <span class="label">UNIT GROSS PROFIT</span>
+                        <span class="val green" id="detailProfit">0.00 INR</span>
+                    </div>
+                    <div class="detail-kpi">
+                        <span class="label">GROSS MARGIN %</span>
+                        <span class="val green" id="detailMargin">0%</span>
+                    </div>
+                    <div class="detail-kpi">
+                        <span class="label">MARKUP %</span>
+                        <span class="val" id="detailMarkup">0%</span>
+                    </div>
+                    <div class="detail-kpi">
+                        <span class="label">STOCK BALANCE</span>
+                        <span class="val" id="detailStock">0 piece</span>
+                    </div>
+                </div>
+
+                <!-- Attributes Info Table -->
+                <div class="detail-info-grid">
+                    <div class="data-row"><span class="label">Category:</span><span class="val" id="detailCategory">--</span></div>
+                    <div class="data-row"><span class="label">Brand:</span><span class="val" id="detailBrand">--</span></div>
+                    <div class="data-row"><span class="label">Supplier:</span><span class="val" id="detailSupplier">--</span></div>
+                    <div class="data-row"><span class="label">Reorder Level:</span><span class="val" id="detailReorder">--</span></div>
+                    <div class="data-row"><span class="label">Status:</span><span class="val" id="detailStatus">--</span></div>
+                    <div class="data-row"><span class="label">Created:</span><span class="val" id="detailCreated">--</span></div>
+                    <div class="data-row"><span class="label">Last Updated:</span><span class="val" id="detailUpdated">--</span></div>
+                    <div class="data-row full-width"><span class="label">Description:</span><span class="val" id="detailDescription">--</span></div>
+                </div>
+
+                <!-- Price History Notice (Step 5 Groundwork) -->
+                <div class="pending-feature-banner">
+                    <span class="icon">⏳</span>
+                    <div>
+                        <strong>HISTORICAL PRICE TRACKING: PENDING STEP 5 ARCHITECTURE</strong>
+                        <p>Current active prices are recorded. Dedicated multi-version price history ledger will be unlocked in Step 5.</p>
+                    </div>
+                </div>
+
+                <!-- Recent Movements Table -->
+                <div class="detail-movements-section">
+                    <h4>RECENT INVENTORY MOVEMENTS</h4>
+                    <table class="cat-table mini-table">
+                        <thead>
+                            <tr>
+                                <th>TIMESTAMP</th>
+                                <th>TYPE</th>
+                                <th>DELTA</th>
+                                <th>BALANCE</th>
+                                <th>REASON</th>
+                                <th>REF</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailMovementsTbody">
+                            <!-- Injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="detail-actions">
+                <button type="button" class="cat-btn-secondary" id="detailAdjustBtn">ADJUST STOCK</button>
+                <button type="button" class="cat-btn-secondary" id="detailEditBtn">EDIT PRODUCT</button>
+                <button type="button" class="cat-btn-danger" id="detailDeactivateBtn">DEACTIVATE PRODUCT</button>
+                <button type="button" class="cat-btn-cancel" onclick="closeProductDetailModal()">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sub-Modal: Spreadsheet Mapping & Commit to Catalogue -->
+    <div class="cat-submodal-overlay" id="spreadsheetMappingModal" style="display: none;">
+        <div class="cat-submodal-card mapping-card">
+            <div class="cat-submodal-header">
+                <div>
+                    <h3 id="mappingModalTitle">SYNCHRONIZE SPREADSHEET TO BUSINESS MODEL</h3>
+                    <p class="mapping-subtitle">Map extracted spreadsheet/CSV columns to catalogue or business ledgers, inspect preview, and commit.</p>
+                </div>
+                <button type="button" class="bi-close-btn" onclick="closeSpreadsheetMappingModal()">✕</button>
+            </div>
+            <div class="mapping-body">
+                <!-- Sync Purpose Selector -->
+                <div class="purpose-selector-row" style="margin-bottom: 14px; display: flex; align-items: center; gap: 10px; background: rgba(0, 243, 255, 0.05); padding: 8px 12px; border: 1px solid rgba(0, 243, 255, 0.2); border-radius: 4px;">
+                    <span class="strategy-label" style="font-weight: 600; color: #00f3ff; font-size: 11px; white-space: nowrap;">SYNCHRONIZATION TARGET:</span>
+                    <select id="syncPurposeSelect" class="cat-select" onchange="onSyncPurposeChange()" style="flex: 1; background: #0b1528; color: #fff; border: 1px solid #00f3ff; padding: 4px 8px; border-radius: 3px; font-size: 11px;">
+                        <option value="catalogue">Product Catalogue & Opening Stock</option>
+                        <option value="purchases">Procurement Ledger (Purchases & Stock Receipts)</option>
+                        <option value="sales">Sales Ledger (Recorded Sales & Stock Deductions)</option>
+                        <option value="inventory_adjustments">Inventory Adjustments (Stock Audit Adjustments)</option>
+                    </select>
+                </div>
+
+                <!-- Column Mapping Grid -->
+                <div class="mapping-fields-grid" id="mappingFieldsGrid">
+                    <!-- Target Fields with Source Column Selectors injected by JS -->
+                </div>
+
+                <!-- Duplicate Strategy Selector (Visible for catalogue) -->
+                <div class="strategy-selector-row" id="dupStrategyRow">
+                    <span class="strategy-label">DUPLICATE PRODUCT STRATEGY:</span>
+                    <label class="radio-label">
+                        <input type="radio" name="dupStrategy" value="skip_existing" checked>
+                        <span>SKIP EXISTING PRODUCTS (Safest)</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="dupStrategy" value="update_permitted_fields">
+                        <span>UPDATE PERMITTED FIELDS (Description, Category, Brand, Supplier - Stock and Prices preserved)</span>
+                    </label>
+                </div>
+
+                <!-- Mapping Controls -->
+                <div class="mapping-preview-actions">
+                    <button type="button" class="cat-btn-secondary" onclick="runMappingPreview()">🔍 PREVIEW VALIDATION & COUNTS</button>
+                    <span class="mapping-hint">Preview tests rows without making changes to the database.</span>
+                </div>
+
+                <!-- Preview Results Box (hidden initially) -->
+                <div class="mapping-result-box" id="mappingResultBox" style="display: none;">
+                    <div class="mapping-counts-row">
+                        <div class="count-pill valid">VALID: <span id="mapValidCount">0</span></div>
+                        <div class="count-pill duplicate">DUPLICATES: <span id="mapDuplicateCount">0</span></div>
+                        <div class="count-pill invalid">INVALID: <span id="mapInvalidCount">0</span></div>
+                        <div class="count-pill total">TOTAL ROWS: <span id="mapTotalCount">0</span></div>
+                    </div>
+                    <div id="mappingTxnSummaryRow" style="display:none; margin-top: 8px; font-size: 11px; color: var(--cyan); background: rgba(0,243,255,0.08); padding: 6px 10px; border-radius: 4px; border-left: 3px solid var(--cyan);">
+                        <span id="mapTxnSummaryText"></span>
+                    </div>
+
+                    <!-- Row-level errors list -->
+                    <div class="mapping-errors-container" id="mappingErrorsContainer" style="display: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <h5 style="margin: 0;">VALIDATION ISSUES IDENTIFIED:</h5>
+                            <button type="button" class="cat-btn-secondary" style="font-size: 10px; padding: 2px 8px;" onclick="downloadMappingErrors()">⬇ DOWNLOAD ERRORS (.JSON)</button>
+                        </div>
+                        <ul id="mappingErrorsList"></ul>
+                    </div>
+
+                    <!-- Sample rows preview table -->
+                    <div class="cat-table-wrapper mini">
+                        <h5>MAPPED SAMPLE PREVIEW:</h5>
+                        <table class="cat-table mini-table">
+                            <thead>
+                                <tr>
+                                    <th>ROW</th>
+                                    <th>NAME</th>
+                                    <th>SKU</th>
+                                    <th>PURCHASE COST</th>
+                                    <th>SELLING PRICE</th>
+                                    <th>OPENING STOCK</th>
+                                    <th>REORDER</th>
+                                    <th>STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mappingSampleTbody">
+                                <!-- Injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="cat-btn-cancel" onclick="closeSpreadsheetMappingModal()">CANCEL</button>
+                <button type="button" class="cat-btn-submit" id="commitImportBtn" onclick="commitSpreadsheetImport()" disabled>
+                    ⚡ CONFIRM & COMMIT TO CATALOGUE
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="hud-footer">
+        <div class="footer-left">
+            <span id="footerRepo">REPOSITORY: ayushrajcodes0407/VANTIQ</span>
+            <span class="separator">//</span>
+            <span id="footerStatus">STATUS: INITIALIZING...</span>
+        </div>
+        <div class="footer-right">
+            <span>PRESS [SPACE] OR CLICK CORE FOR VOICE INPUT</span>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
