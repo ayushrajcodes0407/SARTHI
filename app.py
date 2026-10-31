@@ -6,9 +6,20 @@ import datetime
 import platform
 import psutil
 import requests
-import pyjokes
-import wikipedia
-import qrcode
+try:
+    import pyjokes
+except ImportError:
+    pyjokes = None
+
+try:
+    import wikipedia
+except ImportError:
+    wikipedia = None
+
+try:
+    import qrcode
+except ImportError:
+    qrcode = None
 import io
 import logging
 import pandas as pd
@@ -213,7 +224,10 @@ def get_system():
 @app.route('/api/joke', methods=['GET'])
 def get_joke():
     try:
-        joke = pyjokes.get_joke()
+        if pyjokes:
+            joke = pyjokes.get_joke()
+        else:
+            joke = "Why do programmers prefer dark mode? Because light attracts bugs."
         return jsonify({"joke": joke, "status": "success"})
     except Exception as e:
         return jsonify({"joke": "Why do programmers prefer dark mode? Because light attracts bugs.", "status": "fallback"})
@@ -223,16 +237,18 @@ def get_wikipedia():
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify({"error": "No query specified"}), 400
+    if not wikipedia:
+        return jsonify({"error": "Wikipedia service offline", "summary": f"Could not locate Wikipedia intelligence for '{query}'."}), 200
     try:
         summary = wikipedia.summary(query, sentences=3)
         return jsonify({"query": query, "summary": summary, "status": "success"})
-    except wikipedia.exceptions.DisambiguationError as e:
-        try:
-            summary = wikipedia.summary(e.options[0], sentences=3)
-            return jsonify({"query": e.options[0], "summary": summary, "status": "disambiguated"})
-        except Exception:
-            return jsonify({"error": "Multiple topics found", "options": e.options[:5]}), 200
     except Exception as e:
+        if hasattr(wikipedia, 'exceptions') and isinstance(e, wikipedia.exceptions.DisambiguationError):
+            try:
+                summary = wikipedia.summary(e.options[0], sentences=3)
+                return jsonify({"query": e.options[0], "summary": summary, "status": "disambiguated"})
+            except Exception:
+                return jsonify({"error": "Multiple topics found", "options": getattr(e, 'options', [])[:5]}), 200
         return jsonify({"error": str(e), "summary": f"Could not locate Wikipedia intelligence for '{query}'."}), 200
 
 @app.route('/api/covid', methods=['GET'])

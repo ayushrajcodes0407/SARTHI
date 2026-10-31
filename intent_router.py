@@ -20,10 +20,17 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple
 
 import requests
-import pyjokes
 import psutil
-import wikipedia
 import platform
+try:
+    import pyjokes
+except ImportError:
+    pyjokes = None
+
+try:
+    import wikipedia
+except ImportError:
+    wikipedia = None
 
 import database
 import dataset_intelligence
@@ -3537,7 +3544,13 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
     now = datetime.datetime.now()
 
     if 'joke' in c_lower:
-        joke = pyjokes.get_joke()
+        if pyjokes:
+            try:
+                joke = pyjokes.get_joke()
+            except Exception:
+                joke = "Why do programmers prefer dark mode? Because light attracts bugs."
+        else:
+            joke = "Why do programmers prefer dark mode? Because light attracts bugs."
         return {"speak": joke, "display": joke, "action": "joke", "source": "Humor Protocol", "source_type": "system"}
 
     if 'time' in c_lower:
@@ -3569,6 +3582,8 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
 
     if 'wikipedia' in c_lower:
         query = c_lower.replace('wikipedia', '').replace('search', '').replace('tell me about', '').strip()
+        if not wikipedia:
+            return {"speak": "Wikipedia archives are currently offline.", "display": "Wikipedia offline.", "action": "wikipedia_error", "source": "Wikipedia", "source_type": "system"}
         try:
             summary = wikipedia.summary(query, sentences=2)
             return {"speak": summary, "display": summary, "action": "wikipedia", "source": "Wikipedia Archive", "source_type": "system"}
