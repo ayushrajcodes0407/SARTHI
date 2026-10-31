@@ -4633,14 +4633,21 @@ body {
 }
 
 .chat-followup-chip {
-    padding: 5px 12px;
+    padding: 6px 12px;
     background: rgba(30, 41, 59, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 14px;
+    border-radius: 6px;
     font-size: 12px;
+    line-height: 1.4;
     color: #cbd5e1;
     cursor: pointer;
     transition: all 0.15s ease;
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    box-sizing: border-box;
 }
 
 .chat-followup-chip:hover {
@@ -5890,12 +5897,28 @@ img, svg, video, canvas {
         gap: 8px !important;
     }
 
+    .header-left {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 8px !important;
+    }
+
+    .header-right {
+        flex: 0 0 auto !important;
+        gap: 8px !important;
+    }
+
+    .brand {
+        min-width: 0 !important;
+    }
+
     .brand .sub-text {
         display: none !important;
     }
 
     .brand .logo-text {
-        font-size: 1.12rem !important;
+        font-size: 1.15rem !important;
+        white-space: nowrap !important;
     }
 
     .sarthi-header-logo {
@@ -5903,16 +5926,74 @@ img, svg, video, canvas {
         height: 28px !important;
     }
 
-    .status-badge {
+    .sarthi-brand-logo-wrap {
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+    }
+
+    .header-new-chat-btn {
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+        border-radius: 8px !important;
+    }
+
+    .header-new-chat-btn span {
         display: none !important;
     }
 
-    .header-left {
-        gap: 8px !important;
+    .sidebar-toggle-btn {
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+        border-radius: 8px !important;
     }
 
-    .header-right {
-        gap: 8px !important;
+    /* Status badge: Pulsing dot only */
+    .status-badge {
+        display: inline-flex !important;
+        padding: 6px !important;
+        min-width: 28px !important;
+        height: 28px !important;
+        border-radius: 50% !important;
+        justify-content: center !important;
+        align-items: center !important;
+        gap: 0 !important;
+    }
+
+    #statusText {
+        display: none !important;
+    }
+
+    /* Workspace Header Compact */
+    .chat-workspace-header {
+        height: 42px !important;
+        min-height: 42px !important;
+        padding: 6px 12px !important;
+    }
+
+    .chat-current-title {
+        display: none !important;
+    }
+
+    .chat-action-btn span {
+        display: none !important;
+    }
+
+    .chat-action-btn {
+        padding: 4px 8px !important;
+        min-width: 28px !important;
+        height: 28px !important;
+        justify-content: center !important;
+    }
+
+    .hud-main {
+        height: calc(100dvh - 70px) !important;
     }
 
     .panel.left-panel {
@@ -5944,6 +6025,8 @@ img, svg, video, canvas {
     .conversation-stream {
         padding: 14px 12px 28px 12px !important;
         gap: 16px !important;
+        width: 100% !important;
+        max-width: 100% !important;
     }
 
     .chat-user-bubble {
@@ -5955,6 +6038,10 @@ img, svg, video, canvas {
     .chat-body {
         padding: 12px 14px !important;
         font-size: 13.5px !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
     }
 
     .chat-avatar {
@@ -5963,9 +6050,40 @@ img, svg, video, canvas {
         min-width: 28px !important;
     }
 
+    .chat-table-wrap,
+    .chat-markdown pre {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* Suggested Next Inquiries */
+    .chat-followup-chips {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px 8px !important;
+        width: 100% !important;
+    }
+
+    .chat-followup-chip {
+        border-radius: 6px !important;
+        padding: 6px 10px !important;
+        font-size: 11.5px !important;
+        line-height: 1.4 !important;
+        max-width: 100% !important;
+        white-space: normal !important;
+        text-align: left !important;
+        word-break: break-word !important;
+        overflow-wrap: break-word !important;
+        box-sizing: border-box !important;
+    }
+
     /* Composer Compact Tuning */
     .bottom-composer-slot {
-        padding: 6px 10px calc(10px + var(--safe-bottom)) 10px !important;
+        position: sticky !important;
+        bottom: 0 !important;
+        z-index: 20 !important;
+        padding: 6px 10px calc(10px + env(safe-area-inset-bottom, 0px)) 10px !important;
     }
 
     .composer-form {
@@ -5973,20 +6091,77 @@ img, svg, video, canvas {
         border-radius: 14px !important;
     }
 
+    .composer-action-row {
+        gap: 6px !important;
+        padding-top: 6px !important;
+    }
+
+    .composer-action-left {
+        gap: 6px !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+    }
+
+    .composer-action-right {
+        gap: 6px !important;
+        flex: 0 0 auto !important;
+    }
+
     .wake-word-toggle-btn {
-        padding: 0 8px !important;
-        font-size: 10.5px !important;
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+        border-radius: 8px !important;
+    }
+
+    .wake-btn-label {
+        display: none !important;
     }
 
     .voice-state-indicator {
-        max-width: 140px !important;
-        font-size: 10.5px !important;
+        max-width: 120px !important;
+        font-size: 10px !important;
+        padding: 3px 8px !important;
     }
 
     .composer-execute-btn {
-        min-width: 86px !important;
+        min-width: 84px !important;
+        height: 32px !important;
         padding: 0 10px !important;
-        font-size: 11.5px !important;
+        font-size: 11px !important;
+    }
+
+    /* Footer Compact Tuning */
+    .hud-footer {
+        flex: 0 0 20px !important;
+        height: 20px !important;
+        min-height: 20px !important;
+        max-height: 20px !important;
+        padding: 0 8px !important;
+        justify-content: center !important;
+    }
+
+    .footer-right {
+        display: none !important;
+    }
+
+    .footer-left {
+        width: 100% !important;
+        justify-content: center !important;
+        text-align: center !important;
+        font-size: 0.60rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+
+    #footerRepo,
+    #footerStatus {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
     }
 }
 
@@ -6001,15 +6176,6 @@ img, svg, video, canvas {
         gap: 6px !important;
     }
 
-    .brand .logo-text {
-        font-size: 1.02rem !important;
-    }
-
-    .sarthi-header-logo {
-        width: 26px !important;
-        height: 26px !important;
-    }
-
     .header-left {
         gap: 6px !important;
     }
@@ -6018,25 +6184,48 @@ img, svg, video, canvas {
         gap: 6px !important;
     }
 
+    .brand .logo-text {
+        font-size: 1.05rem !important;
+    }
+
+    .sarthi-header-logo {
+        width: 26px !important;
+        height: 26px !important;
+    }
+
+    .sarthi-brand-logo-wrap {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+    }
+
     .header-new-chat-btn {
-        padding: 6px !important;
-        border-radius: 50% !important;
-        width: 32px !important;
-        height: 32px !important;
-        min-width: 32px !important;
+        padding: 0 !important;
+        border-radius: 8px !important;
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
         justify-content: center !important;
     }
 
-    .header-new-chat-btn span {
-        display: none !important;
+    .sidebar-toggle-btn {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        padding: 0 !important;
+        border-radius: 6px !important;
+        justify-content: center !important;
     }
 
-    .sidebar-toggle-btn {
-        width: 32px !important;
-        height: 32px !important;
-        min-width: 32px !important;
-        padding: 6px !important;
-        border-radius: 6px !important;
+    .status-badge {
+        padding: 4px !important;
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+    }
+
+    .hud-main {
+        height: calc(100dvh - 68px) !important;
     }
 
     .panel.left-panel {
@@ -6097,7 +6286,7 @@ img, svg, video, canvas {
 
     /* Composer Precision Fitting for 375px–480px */
     .bottom-composer-slot {
-        padding: 4px 6px calc(8px + var(--safe-bottom)) 6px !important;
+        padding: 4px 6px calc(8px + env(safe-area-inset-bottom, 0px)) 6px !important;
     }
 
     .composer-form {
@@ -6113,8 +6302,10 @@ img, svg, video, canvas {
     }
 
     .composer-action-row {
-        gap: 6px !important;
+        gap: 5px !important;
         padding-top: 5px !important;
+        flex-wrap: nowrap !important;
+        justify-content: space-between !important;
     }
 
     .composer-action-left {
@@ -6145,9 +6336,9 @@ img, svg, video, canvas {
     }
 
     .voice-state-indicator {
-        max-width: 105px !important;
+        max-width: 100px !important;
         font-size: 9.5px !important;
-        padding: 3px 6px !important;
+        padding: 2px 6px !important;
         gap: 4px !important;
     }
 
@@ -6155,7 +6346,7 @@ img, svg, video, canvas {
         height: 30px !important;
         min-width: 76px !important;
         padding: 0 8px !important;
-        font-size: 11px !important;
+        font-size: 10.5px !important;
         gap: 4px !important;
     }
 
@@ -6177,13 +6368,23 @@ img, svg, video, canvas {
         gap: 4px !important;
     }
 
+    .status-badge {
+        display: none !important;
+    }
+
     .brand .logo-text {
-        font-size: 0.95rem !important;
+        font-size: 0.96rem !important;
+    }
+
+    .sarthi-brand-logo-wrap {
+        width: 26px !important;
+        height: 26px !important;
+        min-width: 26px !important;
     }
 
     .sarthi-header-logo {
-        width: 24px !important;
-        height: 24px !important;
+        width: 22px !important;
+        height: 22px !important;
     }
 
     .header-left {
@@ -6195,17 +6396,23 @@ img, svg, video, canvas {
     }
 
     .sidebar-toggle-btn {
-        width: 30px !important;
-        height: 30px !important;
-        min-width: 30px !important;
-        padding: 4px !important;
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        padding: 0 !important;
+        justify-content: center !important;
     }
 
     .header-new-chat-btn {
-        width: 30px !important;
-        height: 30px !important;
-        min-width: 30px !important;
-        padding: 4px !important;
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+    }
+
+    .hud-main {
+        height: calc(100dvh - 66px) !important;
     }
 
     .panel.left-panel {
@@ -6238,25 +6445,27 @@ img, svg, video, canvas {
     }
 
     .composer-action-left {
-        flex: 1 1 auto !important;
+        flex: 1 1 100% !important;
+        justify-content: space-between !important;
         min-width: 0 !important;
     }
 
     .composer-action-right {
-        flex: 0 0 auto !important;
-        margin-left: auto !important;
+        flex: 1 1 100% !important;
+        justify-content: flex-end !important;
+        gap: 6px !important;
     }
 
     .voice-state-indicator {
-        max-width: 85px !important;
+        max-width: 150px !important;
         font-size: 9px !important;
-        padding: 2px 5px !important;
+        padding: 2px 6px !important;
     }
 
     .composer-execute-btn {
-        min-width: 70px !important;
+        min-width: 72px !important;
         height: 28px !important;
-        font-size: 10.5px !important;
+        font-size: 10px !important;
         padding: 0 6px !important;
     }
 
@@ -6278,6 +6487,10 @@ img, svg, video, canvas {
     .hud-header {
         height: 42px !important;
         min-height: 42px !important;
+    }
+
+    .hud-main {
+        height: calc(100dvh - 58px) !important;
     }
 
     .landing-hero-container {

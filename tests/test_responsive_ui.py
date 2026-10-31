@@ -121,6 +121,40 @@ class TestResponsiveUIOptimization(unittest.TestCase):
         self.assertIn("#C5A06A", self.css)
 
 
+    def test_11_suggested_inquiries_followup_chips_styling(self):
+        """Verify suggested next inquiries / follow-up chips wrap cleanly with 6px border-radius."""
+        self.assertIn('.chat-followup-chip', self.css)
+        self.assertIn('border-radius: 6px', self.css)
+        self.assertIn('word-break: break-word', self.css)
+        self.assertIn('overflow-wrap: break-word', self.css)
+        self.assertIn('white-space: normal', self.css)
+        self.assertIn('flex-wrap: wrap', self.css)
+
+    def test_12_mobile_footer_compactness_and_sticky_composer(self):
+        """Verify mobile footer is compact 20px, keyboard hints hidden, composer is sticky."""
+        self.assertIn('height: 20px !important', self.css)
+        self.assertIn('.footer-right', self.css)
+        self.assertIn('position: sticky !important', self.css)
+        self.assertIn('text-overflow: ellipsis', self.css)
+
+    def test_13_header_overcrowding_prevention(self):
+        """Verify mobile header controls prevent brand collision and overcrowding."""
+        self.assertIn('#statusText', self.css)
+        self.assertIn('.chat-current-title', self.css)
+        self.assertIn('.chat-action-btn span', self.css)
+        self.assertIn('.sarthi-brand-logo-wrap', self.css)
+
+    def test_14_composer_two_row_layout_and_zero_collision(self):
+        """Verify composer cleanly maintains 2-row layout with zero button collisions."""
+        self.assertIn('composer-input-row', self.html)
+        self.assertIn('composer-action-row', self.html)
+        self.assertIn('composer-action-left', self.html)
+        self.assertIn('composer-action-right', self.html)
+        self.assertIn('flex-wrap: wrap !important', self.css)
+        self.assertIn('.wake-btn-label', self.css)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
