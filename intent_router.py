@@ -128,7 +128,7 @@ def get_effective_dataset_id(query: str, context: Optional[Dict[str, Any]] = Non
     return None, None
 
 
-def route_intent(raw_command: str, context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, request_id: Optional[str] = None) -> Dict[str, Any]:
+def route_intent(raw_command: str, context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, request_id: Optional[str] = None, model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
     """
     Central intent routing and execution engine for SARTHI.
     Guarantees deterministic execution across product catalogue, inventory,
@@ -269,6 +269,57 @@ def _build_product_count_response(cat_conn: Any, source_label: str = "Product Ca
     }
 
 
+def is_conversational_query(query: str) -> bool:
+    """Helper to detect open general-knowledge/conversational queries without business entities."""
+    if not query:
+        return False
+    c_lower = query.strip().lower()
+    business_indicators = [
+        'product', 'stock', 'inventory', 'catalogue', 'catalog', 'margin', 'profit', 'supplier',
+        'dataset', 'file', 'sheet', 'purchase', 'sale', 'selling', 'cost', 'price', 'rate',
+        'invoice', 'gst', 'bhav', 'keemat', 'munafa', 'labh', 'bechne', 'khareed'
+    ]
+    return (
+        bool(re.search(r'^(who|what|where|when|why|how)\s+(is|was|are|were|do|does|did|can)\b', c_lower)) or
+        bool(re.search(r'^(explain|tell me about|describe|define)\b', c_lower)) or
+        any(w in c_lower for w in ['who is', 'who was', 'koun hai', 'kon hai', 'tell me about', 'what is the capital', 'history of'])
+    ) and not any(b in c_lower for b in business_indicators)
+
+
+def _build_business_performance_response(cat_conn: Any, db_path: Optional[str] = None, lang: str = "en", context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    summary = database.get_inventory_summary(conn=cat_conn, db_path=db_path)
+    active = summary.get("active_products", 0)
+    units = summary.get("total_stock_units", 0.0)
+    cost_val = summary.get("cost_valuation", 0.0)
+    retail_val = summary.get("retail_valuation", 0.0)
+    val = cost_val if cost_val > 0 else retail_val
+
+    low_count = summary.get("low_stock_count", 0)
+    bi_rep = (context or {}).get("current_bi_report")
+
+    if lang in ("hi", "hinglish"):
+        spk = f"Business Performance Overview: Aapke paas {active} active products hain, total {units:,.0f} units stock mein hain jiski valuation ₹{val:,.2f} hai, aur {low_count} products low stock par hain."
+        dsp = f"Business Performance: {active} Active Products | Stock: {units:,.0f} units | Valuation: ₹{val:,.2f} | Low Stock: {low_count} items"
+    else:
+        spk = f"Here is your business performance summary: You have {active} active products with {units:,.0f} total stock units valued at ₹{val:,.2f}. Currently, {low_count} items require replenishment."
+        dsp = f"Business Performance Overview | Products: {active} | Total Stock: {units:,.0f} units | Inventory Value: ₹{val:,.2f} | Low Stock Alerts: {low_count}"
+
+    return {
+        "speak": spk,
+        "display": dsp,
+        "action": "business_performance",
+        "source": "Commercial Intelligence",
+        "source_type": "business_insights",
+        "active_products": active,
+        "total_stock_units": units,
+        "total_valuation": val,
+        "low_stock_count": low_count,
+        "summary": summary,
+        "report": bi_rep,
+        "follow_ups": ["Which products are running low on stock?", "Show all products", "Total inventory value kitni hai?"]
+    }
+
+
 def _build_inventory_summary_response(cat_conn: Any, source_label: str = "Inventory Ledger", lang: str = "en") -> Dict[str, Any]:
     summary = database.get_inventory_summary(conn=cat_conn)
     active = summary.get("active_products", 0)
@@ -302,6 +353,37 @@ def _build_inventory_summary_response(cat_conn: Any, source_label: str = "Invent
         "total_valuation": valuation,
         "low_stock_count": low_count,
         "follow_ups": ["Show all products", "Which products are low in stock?"]
+    }
+
+
+def _build_inventory_valuation_response(cat_conn: Any, source_label: str = "Inventory Ledger", lang: str = "en", db_path: Optional[str] = None) -> Dict[str, Any]:
+    summary = database.get_inventory_summary(conn=cat_conn, db_path=db_path)
+    active = summary.get("active_products", 0)
+    units = summary.get("total_stock_units", 0.0)
+    cost_val = summary.get("cost_valuation", 0.0)
+    retail_val = summary.get("retail_valuation", 0.0)
+    val = cost_val if cost_val > 0 else retail_val
+
+    if lang in ("hi", "hinglish"):
+        speak_text = f"Aapki total inventory valuation ₹{val:,.2f} hai ({units:,.0f} units across {active} active products)."
+        display_text = f"Inventory Valuation: ₹{val:,.2f} | Stock: {units:,.0f} units | Products: {active}"
+    else:
+        speak_text = f"The total inventory value is ₹{val:,.2f} across {active} active products, totaling {units:,.0f} units in stock."
+        display_text = f"Total Inventory Value: ₹{val:,.2f} | Stock: {units:,.0f} units"
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "inventory_valuation",
+        "source": source_label,
+        "source_type": "inventory",
+        "total_valuation": val,
+        "cost_valuation": cost_val,
+        "retail_valuation": retail_val,
+        "total_stock_units": units,
+        "active_products": active,
+        "summary": summary,
+        "follow_ups": ["Which products are running low on stock?", "Show all products", "Which product has the highest selling price?"]
     }
 
 
@@ -537,15 +619,159 @@ def _build_out_of_stock_response(cat_conn: Any, source_label: str = "Inventory L
     }
 
 
-def _build_selling_price_response(target: str, cat_conn: Any, source_label: str = "Product Catalogue", lang: str = "en", session_id: Optional[str] = None) -> Dict[str, Any]:
-    target = target.rstrip('?.')
-    session_ctx = multilingual.get_session_context(session_id)
-    # Check contextual resolution if target is generic
-    if target in ("context_product", "is product", "iss product", "this product", "product") and session_ctx.last_product:
-        target = session_ctx.last_product["name"]
+def _resolve_product(target: Optional[str], cat_conn: Any, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Authoritative deterministic product resolver:
+    1. Case-insensitive, whitespace-normalized, safe punctuation stripped.
+    2. Exact SKU and Name matching first.
+    3. Handles singular and plural inflections (e.g. 'chairs' -> 'Chair').
+    4. Controlled partial matching without accidental cross-product collisions.
+    """
+    if not target or not isinstance(target, str):
+        return []
 
-    res = database.list_products(search=target, is_active=True, conn=cat_conn)
-    items = res["items"]
+    # Strip safe punctuation and leading articles/filler words
+    cleaned = target.strip().rstrip('?.!;:,"\'')
+    cleaned = re.sub(r'^(the|a|an|product|item|sku)\s+', '', cleaned, flags=re.IGNORECASE).strip()
+    if not cleaned:
+        return []
+
+    c_lower = cleaned.lower()
+
+    # 1. Direct query: Exact SKU or Exact Name
+    try:
+        cur = cat_conn.cursor() if cat_conn else database.get_connection(db_path).cursor()
+        cur.execute(
+            """
+            SELECT p.*, i.quantity_on_hand, i.reorder_level AS inv_reorder_level, i.unit AS inv_unit
+            FROM products p
+            LEFT JOIN inventory i ON p.id = i.product_id
+            WHERE p.is_active = 1 AND (LOWER(TRIM(p.sku)) = ? OR LOWER(TRIM(p.name)) = ?)
+            LIMIT 5
+            """,
+            (c_lower, c_lower)
+        )
+        exact_rows = [dict(r) for r in cur.fetchall()]
+        if exact_rows:
+            return exact_rows
+    except Exception as e:
+        logger.warning(f"Error in direct exact product lookup: {e}")
+
+    # 2. Singular/Plural variant check (e.g. 'chairs' -> 'chair')
+    singular_candidates = []
+    if c_lower.endswith('ies'):
+        singular_candidates.append(c_lower[:-3] + 'y')
+    elif c_lower.endswith('es'):
+        singular_candidates.append(c_lower[:-2])
+        singular_candidates.append(c_lower[:-1])
+    elif c_lower.endswith('s'):
+        singular_candidates.append(c_lower[:-1])
+
+    for sc in singular_candidates:
+        try:
+            cur = cat_conn.cursor() if cat_conn else database.get_connection(db_path).cursor()
+            cur.execute(
+                """
+                SELECT p.*, i.quantity_on_hand, i.reorder_level AS inv_reorder_level, i.unit AS inv_unit
+                FROM products p
+                LEFT JOIN inventory i ON p.id = i.product_id
+                WHERE p.is_active = 1 AND (LOWER(TRIM(p.sku)) = ? OR LOWER(TRIM(p.name)) = ?)
+                LIMIT 5
+                """,
+                (sc, sc)
+            )
+            sc_rows = [dict(r) for r in cur.fetchall()]
+            if sc_rows:
+                return sc_rows
+        except Exception:
+            pass
+
+    # 3. Fallback to database.list_products search
+    search_res = database.list_products(search=cleaned, is_active=True, conn=cat_conn, db_path=db_path)
+    items = search_res.get("items", [])
+    if not items and singular_candidates:
+        for sc in singular_candidates:
+            sc_res = database.list_products(search=sc, is_active=True, conn=cat_conn, db_path=db_path)
+            if sc_res.get("items"):
+                items = sc_res["items"]
+                break
+
+    # If multiple candidates, prioritize the one matching name exactly
+    if len(items) > 1:
+        exact_subset = [p for p in items if p["name"].lower().strip() == c_lower or (singular_candidates and p["name"].lower().strip() in singular_candidates)]
+        if len(exact_subset) == 1:
+            return exact_subset
+
+    return items
+
+
+def _build_reorder_level_response(target: str, cat_conn: Any, source_label: str = "Inventory Balance", lang: str = "en", db_path: Optional[str] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
+    target = (target or "").rstrip('?. ').strip()
+    session_ctx = multilingual.get_session_context(session_id)
+    if target in ("context_product", "is product", "iss product", "this product", "product") and session_ctx.last_product:
+        target = session_ctx.last_product.get("name", "")
+
+    items = _resolve_product(target, cat_conn, db_path=db_path)
+    if not items:
+        speak_text = f"No product matching '{target}' was found in the catalogue."
+        return {
+            "speak": speak_text,
+            "display": f"Reorder Level: No match for '{target}'",
+            "action": "catalogue_reorder_level",
+            "source": source_label,
+            "source_type": "catalogue",
+            "match_count": 0
+        }
+    elif len(items) > 1:
+        candidates = ", ".join([f"{p['name']} (SKU: {p.get('sku') or 'N/A'})" for p in items[:3]])
+        speak_text = f"Multiple products match '{target}': {candidates}. Please clarify the exact SKU or name."
+        return {
+            "speak": speak_text,
+            "display": f"Multiple matches for '{target}'",
+            "action": "catalogue_reorder_level",
+            "source": source_label,
+            "source_type": "catalogue",
+            "match_count": len(items),
+            "candidates": items[:5]
+        }
+    else:
+        p = items[0]
+        session_ctx.clear_pending_action()
+        session_ctx.update_product(p, language=lang)
+        inv = database.get_inventory_balance(p["id"], conn=cat_conn, db_path=db_path)
+        reorder = inv["reorder_level"] if inv and inv.get("reorder_level") is not None else (p.get("reorder_level") if p.get("reorder_level") is not None else 0.0)
+        qty = inv["quantity_on_hand"] if inv and inv.get("quantity_on_hand") is not None else (p.get("quantity_on_hand") or 0.0)
+        unit = p.get("unit") or "units"
+
+        if lang == "hi":
+            speak_text = f"{p['name']} का रीऑर्डर स्तर (Reorder Level) {reorder:g} {unit} है। वर्तमान स्टॉक: {qty:g} {unit}।"
+        elif lang == "hinglish":
+            speak_text = f"{p['name']} ka reorder level {reorder:g} {unit} hai. Current stock: {qty:g} {unit}."
+        else:
+            speak_text = f"The reorder level of {p['name']} is {reorder:g} units. Current stock: {qty:g} {unit}."
+        display_text = f"{p['name']}: Reorder Level = {reorder:g} {unit} | Current Stock = {qty:g} {unit}"
+
+        return {
+            "speak": speak_text,
+            "display": display_text,
+            "action": "catalogue_reorder_level",
+            "source": source_label,
+            "source_type": "catalogue",
+            "match_count": 1,
+            "product": p,
+            "reorder_level": reorder,
+            "stock": qty,
+            "follow_ups": [f"What is the stock of {p['name']}?", f"What is the selling price of {p['name']}?"]
+        }
+
+
+def _build_selling_price_response(target: str, cat_conn: Any, source_label: str = "Product Catalogue", lang: str = "en", db_path: Optional[str] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
+    target = (target or "").rstrip('?. ').strip()
+    session_ctx = multilingual.get_session_context(session_id)
+    if target in ("context_product", "is product", "iss product", "this product", "product") and session_ctx.last_product:
+        target = session_ctx.last_product.get("name", "")
+
+    items = _resolve_product(target, cat_conn, db_path=db_path)
 
     if not items:
         if lang in ("hi", "hinglish"):
@@ -566,7 +792,7 @@ def _build_selling_price_response(target: str, cat_conn: Any, source_label: str 
             "follow_ups": ["Show all products", "Check inventory summary"]
         }
     elif len(items) > 1:
-        candidates = ", ".join([f"{p['name']} (SKU: {p['sku'] or 'N/A'})" for p in items[:3]])
+        candidates = ", ".join([f"{p['name']} (SKU: {p.get('sku') or 'N/A'})" for p in items[:3]])
         speak_text = f"Multiple products match '{target}': {candidates}. Please clarify the exact SKU or name."
         return {
             "speak": speak_text,
@@ -581,13 +807,33 @@ def _build_selling_price_response(target: str, cat_conn: Any, source_label: str 
         p = items[0]
         session_ctx.clear_pending_action()
         session_ctx.update_product(p, language=lang)
-        if lang in ("hi", "hinglish"):
-            loc = multilingual.format_multilingual_response("selling_price", lang, {"product": p})
-            speak_text = loc["speak"]
-            display_text = loc["display"]
+        curr = p.get("currency") or "INR"
+        curr_sym = "₹" if curr in ("INR", "₹") else f"{curr} "
+        sp = p.get("selling_price")
+        cp = p.get("purchase_price")
+
+        if sp is not None:
+            sp_formatted = f"{curr_sym}{float(sp):,.2f}"
+            if lang == "hi":
+                speak_text = f"{p['name']} का विक्रय मूल्य (Selling Price) {sp_formatted} है।"
+            elif lang == "hinglish":
+                speak_text = f"{p['name']} ka selling price {sp_formatted} hai."
+            else:
+                speak_text = f"The selling price of {p['name']} is {sp_formatted}."
+
+            if cp is not None:
+                display_text = f"{p['name']}: Selling Price = {sp_formatted} | Cost = {curr_sym}{float(cp):,.2f}"
+            else:
+                display_text = f"{p['name']}: Selling Price = {sp_formatted} | Cost = Not available"
         else:
-            speak_text = f"The selling price of {p['name']} is {p['selling_price']} {p['currency']}. Purchase cost is {p['purchase_price']} {p['currency']}."
-            display_text = f"{p['name']}: Selling Price = ₹{p['selling_price']:,.2f} | Cost = ₹{p['purchase_price']:,.2f}"
+            if lang == "hi":
+                speak_text = f"{p['name']} का विक्रय मूल्य कैटलॉग में उपलब्ध नहीं है।"
+            elif lang == "hinglish":
+                speak_text = f"{p['name']} ka selling price catalogue mein available nahi hai."
+            else:
+                speak_text = f"The selling price of {p['name']} is not available in the catalogue."
+            display_text = f"{p['name']}: Selling Price = Not available"
+
         return {
             "speak": speak_text,
             "display": display_text,
@@ -596,7 +842,7 @@ def _build_selling_price_response(target: str, cat_conn: Any, source_label: str 
             "source_type": "catalogue",
             "match_count": 1,
             "product": p,
-            "follow_ups": [f"What is the stock of {p['name']}?"]
+            "follow_ups": [f"What is the stock of {p['name']}?", "Show all products"]
         }
 
 
@@ -631,21 +877,25 @@ def _build_market_price_clarification_response(target: Optional[str], cat_conn: 
         p = items[0]
         session_ctx.update_product(p, language=lang)
         p_name = p.get("name", target)
-        sp = p.get("selling_price", 0.0)
-        pc = p.get("purchase_price", 0.0)
+        sp_raw = p.get("selling_price")
+        pc_raw = p.get("purchase_price")
+        sp = float(sp_raw) if sp_raw is not None else None
+        pc = float(pc_raw) if pc_raw is not None else None
         curr = p.get("currency", "INR")
         curr_sym = "₹" if curr in ("INR", "₹") else f"{curr} "
+        sp_str = f"{curr_sym}{sp:,.2f}" if sp is not None else "Not available"
+        pc_str = f"{curr_sym}{pc:,.2f}" if pc is not None else "Not available"
 
         if lang == "hi":
-            msg = f"SARTHI में '{p_name}' की आंतरिक विक्रय मूल्य {curr_sym}{sp:,.2f} और पिछली खरीद लागत {curr_sym}{pc:,.2f} दर्ज है। बाहरी खुले बाजार की कीमत का वर्तमान में सत्यापन नहीं किया जा सकता क्योंकि बाहरी मार्केट रिसर्च उपलब्ध नहीं है। क्या आप आंतरिक कैटलॉग मूल्य जानना चाहते थे?"
+            msg = f"SARTHI में '{p_name}' की आंतरिक विक्रय मूल्य {sp_str} और पिछली खरीद लागत {pc_str} दर्ज है। बाहरी खुले बाजार की कीमत का वर्तमान में सत्यापन नहीं किया जा सकता क्योंकि बाहरी मार्केट रिसर्च उपलब्ध नहीं है। क्या आप आंतरिक कैटलॉग मूल्य जानना चाहते थे?"
         elif lang == "hinglish":
-            msg = f"SARTHI mein '{p_name}' ki internal selling price {curr_sym}{sp:,.2f} aur recorded purchase cost {curr_sym}{pc:,.2f} hai. External open-market price live feeds ke bina verify nahi ho sakti. Kya aap internal catalogue price dekhna chahte hain?"
+            msg = f"SARTHI mein '{p_name}' ki internal selling price {sp_str} aur recorded purchase cost {pc_str} hai. External open-market price live feeds ke bina verify nahi ho sakti. Kya aap internal catalogue price dekhna chahte hain?"
         else:
-            msg = f"In SARTHI, '{p_name}' has an internal selling price of {curr_sym}{sp:,.2f} and a recorded purchase cost of {curr_sym}{pc:,.2f}. External open-market pricing cannot currently be verified without live market feeds. Did you mean our internal catalogue price or external market valuation?"
+            msg = f"In SARTHI, '{p_name}' has an internal selling price of {sp_str} and a recorded purchase cost of {pc_str}. External open-market pricing cannot currently be verified without live market feeds. Did you mean our internal catalogue price or external market valuation?"
 
         return {
             "speak": msg,
-            "display": f"{p_name}: Internal Selling = {curr_sym}{sp:,.2f} | Purchase Cost = {curr_sym}{pc:,.2f} (External market price unverified)",
+            "display": f"{p_name}: Internal Selling = {sp_str} | Purchase Cost = {pc_str} (External market price unverified)",
             "action": "market_price_clarification",
             "source": "Catalogue & Market Diagnostics",
             "source_type": "pricing",
@@ -1358,7 +1608,7 @@ def _build_compare_product_sales_response(prod_a: str, prod_b: str, context: Opt
     }
 
 
-def _build_dataset_summary_response(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+def _build_dataset_summary_response(context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en", focus: Optional[str] = None) -> Dict[str, Any]:
     import pandas as pd
     df, ds = _resolve_tabular_dataset_df(context=context, db_path=db_path)
     if df is None:
@@ -1386,12 +1636,20 @@ def _build_dataset_summary_response(context: Optional[Dict[str, Any]] = None, db
         if not dt_s.empty:
             timeline_str = f" between {dt_s.min().strftime('%B %Y')} and {dt_s.max().strftime('%B %Y')}"
 
-    speak_text = (
-        f"Dataset summary for {filename}: {row_count:,} transaction rows across {col_count} columns "
-        f"covering {unique_prods} products and {unique_regs} sales regions. "
-        f"Total recorded revenue is ₹{total_rev:,.2f} with {total_qty:,} units sold{timeline_str}."
-    )
-    display_text = f"Summary: {filename} | {row_count:,} Rows x {col_count} Columns | Total Revenue: ₹{total_rev:,.2f} | Units Sold: {total_qty:,}."
+    if focus == "revenue":
+        if lang in ("hi", "hinglish"):
+            speak_text = f"Is dataset ({filename}) ka total recorded revenue ₹{total_rev:,.2f} hai ({row_count:,} transaction rows covering {unique_prods} products)."
+            display_text = f"Dataset Revenue: ₹{total_rev:,.2f} | {filename} | {row_count:,} Rows"
+        else:
+            speak_text = f"The total recorded revenue for this dataset ({filename}) is ₹{total_rev:,.2f} across {row_count:,} transactions."
+            display_text = f"Total Revenue: ₹{total_rev:,.2f} | Dataset: {filename} | Rows: {row_count:,}"
+    else:
+        speak_text = (
+            f"Dataset summary for {filename}: {row_count:,} transaction rows across {col_count} columns "
+            f"covering {unique_prods} products and {unique_regs} sales regions. "
+            f"Total recorded revenue is ₹{total_rev:,.2f} with {total_qty:,} units sold{timeline_str}."
+        )
+        display_text = f"Summary: {filename} | {row_count:,} Rows x {col_count} Columns | Total Revenue: ₹{total_rev:,.2f} | Units Sold: {total_qty:,}."
 
     return {
         "speak": speak_text,
@@ -1409,6 +1667,53 @@ def _build_dataset_summary_response(context: Optional[Dict[str, Any]] = None, db
     }
 
 
+def _build_sales_summary_response(period: str = "today", context: Optional[Dict[str, Any]] = None, db_path: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
+    total_sales = 0.0
+    orders_count = 0
+    try:
+        conn = database.get_connection(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sales'")
+        if cur.fetchone():
+            cur.execute("SELECT COALESCE(SUM(total_amount), 0), COUNT(*) FROM sales WHERE DATE(sale_date) = DATE('now')")
+            row = cur.fetchone()
+            total_sales = float(row[0] or 0.0)
+            orders_count = int(row[1] or 0)
+    except Exception:
+        pass
+
+    if period == "today":
+        if total_sales > 0:
+            if lang in ("hi", "hinglish"):
+                speak_text = f"Aaj kul ₹{total_sales:,.2f} ki sales hui hai ({orders_count} orders)."
+                display_text = f"Today's Sales: ₹{total_sales:,.2f} ({orders_count} orders)"
+            else:
+                speak_text = f"Today's recorded sales total is ₹{total_sales:,.2f} across {orders_count} orders."
+                display_text = f"Today's Sales: ₹{total_sales:,.2f} ({orders_count} orders)"
+        else:
+            if lang in ("hi", "hinglish"):
+                speak_text = "Aaj ke liye abhi tak koi new sales transaction record nahi hua hai."
+                display_text = "Today's Sales: ₹0.00 (0 orders)"
+            else:
+                speak_text = "No sales transactions have been recorded yet for today."
+                display_text = "Today's Sales: ₹0.00 (0 orders)"
+    else:
+        speak_text = f"Recorded sales: ₹{total_sales:,.2f} across {orders_count} orders."
+        display_text = f"Sales Summary: ₹{total_sales:,.2f}"
+
+    return {
+        "speak": speak_text,
+        "display": display_text,
+        "action": "bi_sales",
+        "source": "Sales Ledger",
+        "source_type": "sales",
+        "total_sales": total_sales,
+        "orders_count": orders_count,
+        "period": period,
+        "follow_ups": ["Which product generated the highest revenue?", "What is the revenue for this dataset?"]
+    }
+
+
 def _build_stock_response(target: str, cat_conn: Any, source_label: str = "Inventory Balance", lang: str = "en", db_path: Optional[str] = None, session_id: Optional[str] = None, is_quantity_query: bool = False) -> Dict[str, Any]:
     target = (target or "").rstrip('?.').strip()
     session_ctx = multilingual.get_session_context(session_id)
@@ -1416,8 +1721,7 @@ def _build_stock_response(target: str, cat_conn: Any, source_label: str = "Inven
     if target in ("context_product", "is product", "iss product", "this product", "product") and session_ctx.last_product:
         target = session_ctx.last_product["name"]
 
-    res = database.list_products(search=target, is_active=True, conn=cat_conn, db_path=db_path)
-    items = res["items"]
+    items = _resolve_product(target, cat_conn, db_path=db_path)
 
     if not items:
         if lang in ("hi", "hinglish"):
@@ -1453,6 +1757,7 @@ def _build_stock_response(target: str, cat_conn: Any, source_label: str = "Inven
     else:
         p = items[0]
         session_ctx.clear_pending_action()
+        session_ctx.update_product(p, language=lang)
         multilingual.SESSION_CONTEXT.update_product(p, language=lang)
 
         # Check sales dataset context for quantity inquiries to distinguish stock vs sales volume
@@ -1480,7 +1785,7 @@ def _build_stock_response(target: str, cat_conn: Any, source_label: str = "Inven
         if is_quantity_query and sales_units is not None:
             speak_text = f"{p['name']} currently has {qty_str} {unit_val} in stock (Reorder level: {reorder_str} {unit_val}). In sales records, a total of {sales_units:,} units have been sold across {sales_orders} orders."
             display_text = f"{p['name']} currently has {qty_str} {unit_val} in stock. Reorder level: {reorder_str} {unit_val}. (Recorded sales volume: {sales_units:,} units sold across {sales_orders} orders)."
-        elif lang in ("hi", "hinglish") and not is_quantity_query:
+        elif lang in ("hi", "hinglish"):
             loc = multilingual.format_multilingual_response("product_stock", lang, {
                 "name": p["name"],
                 "quantity": orig_qty,
@@ -1569,10 +1874,13 @@ def _build_find_product_response(target: str, cat_conn: Any, source_label: str =
         }
 
 
-def _build_purchase_cost_response(target: str, cat_conn: Any, source_label: str = "Product Catalogue") -> Dict[str, Any]:
-    target = target.rstrip('?.')
-    res = database.list_products(search=target, is_active=True, conn=cat_conn)
-    items = res["items"]
+def _build_purchase_cost_response(target: str, cat_conn: Any, source_label: str = "Product Catalogue", lang: str = "en", db_path: Optional[str] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
+    target = (target or "").rstrip('?. ').strip()
+    session_ctx = multilingual.get_session_context(session_id)
+    if target in ("context_product", "is product", "iss product", "this product", "product") and session_ctx.last_product:
+        target = session_ctx.last_product.get("name", "")
+
+    items = _resolve_product(target, cat_conn, db_path=db_path)
 
     if not items:
         speak_text = f"No product matching '{target}' was found in the catalogue."
@@ -1585,7 +1893,7 @@ def _build_purchase_cost_response(target: str, cat_conn: Any, source_label: str 
             "match_count": 0
         }
     elif len(items) > 1:
-        candidates = ", ".join([f"{p['name']} (SKU: {p['sku'] or 'N/A'})" for p in items[:3]])
+        candidates = ", ".join([f"{p['name']} (SKU: {p.get('sku') or 'N/A'})" for p in items[:3]])
         speak_text = f"Multiple products match '{target}': {candidates}. Please clarify the exact SKU or name."
         return {
             "speak": speak_text,
@@ -1598,15 +1906,43 @@ def _build_purchase_cost_response(target: str, cat_conn: Any, source_label: str 
         }
     else:
         p = items[0]
-        speak_text = f"The purchase price of {p['name']} is {p['purchase_price']} {p['currency']}. Current selling price is {p['selling_price']} {p['currency']}."
+        session_ctx.clear_pending_action()
+        session_ctx.update_product(p, language=lang)
+        curr = p.get("currency") or "INR"
+        curr_sym = "₹" if curr in ("INR", "₹") else f"{curr} "
+        cp = p.get("purchase_price")
+        sp = p.get("selling_price")
+
+        if cp is not None:
+            cp_formatted = f"{curr_sym}{float(cp):,.2f}"
+            if lang == "hi":
+                speak_text = f"{p['name']} का खरीद मूल्य (Purchase Cost) {cp_formatted} है।"
+            elif lang == "hinglish":
+                speak_text = f"{p['name']} ka purchase cost {cp_formatted} hai."
+            else:
+                speak_text = f"The purchase cost of {p['name']} is {cp_formatted}."
+            cost_display = cp_formatted
+        else:
+            if lang == "hi":
+                speak_text = f"{p['name']} का खरीद मूल्य कैटलॉग में उपलब्ध नहीं है।"
+            elif lang == "hinglish":
+                speak_text = f"{p['name']} ka purchase cost catalogue mein available nahi hai."
+            else:
+                speak_text = f"The purchase cost of {p['name']} is not available in the catalogue."
+            cost_display = "Not available"
+
+        sp_display = f"{curr_sym}{float(sp):,.2f}" if sp is not None else "Not available"
+        display_text = f"{p['name']}: Cost = {cost_display} | Selling = {sp_display}"
+
         return {
             "speak": speak_text,
-            "display": f"{p['name']}: Cost = ₹{p['purchase_price']:,.2f} | Selling = ₹{p['selling_price']:,.2f}",
+            "display": display_text,
             "action": "catalogue_price",
             "source": source_label,
             "source_type": "catalogue",
             "match_count": 1,
-            "product": p
+            "product": p,
+            "follow_ups": [f"What is the selling price of {p['name']}?", f"What is the stock of {p['name']}?"]
         }
 
 
@@ -1744,23 +2080,22 @@ def _build_product_details_response(target: str, cat_conn: Any, source_label: st
     if target in ("context_product", "is product", "iss product", "this product", "product", "is item", "item") and multilingual.SESSION_CONTEXT.last_product:
         target = multilingual.SESSION_CONTEXT.last_product.get("name") or multilingual.SESSION_CONTEXT.last_product.get("sku")
 
-    p = database.find_product_by_identifier(target, conn=cat_conn, db_path=db_path)
-    if not p:
-        res = database.list_products(search=target, is_active=True, conn=cat_conn, db_path=db_path)
-        items = res.get("items", [])
-        if len(items) == 1:
-            p = items[0]
-        elif len(items) > 1:
-            candidates = ", ".join([f"{item['name']} (SKU: {item['sku'] or 'N/A'})" for item in items[:3]])
-            return {
-                "speak": f"Multiple products match '{target}': {candidates}. Please specify the exact SKU or name.",
-                "display": f"Multiple matches for '{target}' ({len(items)} found)",
-                "action": "product_clarify",
-                "source": source_label,
-                "source_type": "catalogue",
-                "match_count": len(items),
-                "candidates": items[:5]
-            }
+    items = _resolve_product(target, cat_conn, db_path=db_path)
+    if not items:
+        p = None
+    elif len(items) == 1:
+        p = items[0]
+    else:
+        candidates = ", ".join([f"{item['name']} (SKU: {item.get('sku') or 'N/A'})" for item in items[:3]])
+        return {
+            "speak": f"Multiple products match '{target}': {candidates}. Please specify the exact SKU or full name.",
+            "display": f"Multiple matches for '{target}'",
+            "action": "product_details",
+            "source": source_label,
+            "source_type": "catalogue",
+            "match_count": len(items),
+            "candidates": items[:5]
+        }
 
     if not p:
         if lang == "hi":
@@ -1794,18 +2129,32 @@ def _build_product_details_response(target: str, cat_conn: Any, source_label: st
     supplier = database.get_supplier_for_product(p.get("sku") or p["name"], conn=cat_conn, db_path=db_path)
     supp_name = (supplier.get("supplier_name") or supplier.get("name")) if supplier else "Unassigned"
 
-    margins = database.calculate_margins(cp, sp)
-    gp = margins.get("gross_profit")
-    gm_pct = margins.get("gross_margin_pct")
+    sp_val = float(p["selling_price"]) if p.get("selling_price") is not None else None
+    cp_val = float(p["purchase_price"]) if p.get("purchase_price") is not None else None
+
+    if cp_val is not None and sp_val is not None:
+        margins = database.calculate_margins(cp_val, sp_val)
+        gp = margins.get("gross_profit")
+        gm_pct = margins.get("gross_margin_pct")
+    else:
+        gp = None
+        gm_pct = None
+
+    curr = p.get("currency") or "INR"
+    curr_sym = "₹" if curr in ("INR", "₹") else f"{curr} "
+    sp_str = f"{curr_sym}{sp_val:,.2f}" if sp_val is not None else "Not available"
+    cp_str = f"{curr_sym}{cp_val:,.2f}" if cp_val is not None else "Not available"
+    gm_str = f"{gm_pct:.1f}% (Profit: {curr_sym}{gp:,.2f})" if (gm_pct is not None and gp is not None) else "Not available"
+    last_rate_str = f"{curr_sym}{last_rate:,.2f} ({last_date})" if last_rate is not None else "No purchases recorded"
 
     if lang == "hi":
-        speak_text = f"{p['name']} (SKU: {p.get('sku') or 'N/A'}): स्टॉक {qty:g} {unit}, सेलिंग प्राइस ₹{sp:,.2f}, सप्लायर: {supp_name}।"
+        speak_text = f"{p['name']} (SKU: {p.get('sku') or 'N/A'}): स्टॉक {qty:g} {unit}, विक्रय मूल्य {sp_str}, सप्लायर: {supp_name}।"
     elif lang == "hinglish":
-        speak_text = f"{p['name']} (SKU: {p.get('sku') or 'N/A'}) ka stock {qty:g} {unit} hai, selling price ₹{sp:,.2f} hai, aur supplier {supp_name} hai."
+        speak_text = f"{p['name']} (SKU: {p.get('sku') or 'N/A'}) ka stock {qty:g} {unit} hai, selling price {sp_str} hai, aur supplier {supp_name} hai."
     else:
-        speak_text = f"{p['name']} (SKU: {p.get('sku') or 'N/A'}): Current stock {qty:g} {unit}, selling price ₹{sp:,.2f}, supplier {supp_name}."
+        speak_text = f"{p['name']} (SKU: {p.get('sku') or 'N/A'}): Current stock {qty:g} {unit}, selling price {sp_str}, supplier: {supp_name}."
 
-    display_text = f"{p['name']} | Stock: {qty:g} {unit} | Price: ₹{sp:,.2f} | Supplier: {supp_name}"
+    display_text = f"{p['name']} | Stock: {qty:g} {unit} | Price: {sp_str} | Cost: {cp_str} | Supplier: {supp_name}"
 
     table_rows = [
         {"property": "Product Name", "value": p["name"]},
@@ -1813,10 +2162,10 @@ def _build_product_details_response(target: str, cat_conn: Any, source_label: st
         {"property": "Category", "value": p.get("category") or "General"},
         {"property": "Current Stock", "value": f"{qty:g} {unit}"},
         {"property": "Reorder Level", "value": f"{reorder:g} {unit}"},
-        {"property": "Selling Price", "value": f"₹{sp:,.2f}"},
-        {"property": "Standard Cost", "value": f"₹{cp:,.2f}"},
-        {"property": "Last Purchase Rate", "value": f"₹{last_rate:,.2f} ({last_date})" if last_rate else "No purchases recorded"},
-        {"property": "Gross Margin", "value": f"{gm_pct}% (Profit: ₹{gp:,.2f})" if gm_pct is not None else "N/A"},
+        {"property": "Selling Price", "value": sp_str},
+        {"property": "Standard Cost", "value": cp_str},
+        {"property": "Last Purchase Rate", "value": last_rate_str},
+        {"property": "Gross Margin", "value": gm_str},
         {"property": "Supplier", "value": supp_name}
     ]
 
@@ -2322,6 +2671,31 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
     # PRECEDENCE 1: CONVERSATIONAL CONTEXT & PENDING ACTION RESOLUTION
     # =========================================================================
 
+    # 1AA. Direct Greetings Check (< 1 ms latency)
+    greeting_patterns = [
+        r'^(hello|hi|hey|greetings|namaste|kem cho|kya haal hai|good morning|good afternoon|good evening)\b',
+        r'^(hello|hi|hey|namaste)\s+(sarthi|jarvis|vantiq|there|buddy|bro)\b'
+    ]
+    is_greeting = any(bool(re.search(pat, clean_lower)) for pat in greeting_patterns)
+    has_business_query = any(b in clean_lower for b in [
+        'stock', 'price', 'profit', 'margin', 'product', 'inventory', 'report', 'dataset', 'sales', 'supplier'
+    ])
+    if is_greeting and not has_business_query:
+        if detected_lang in ('hi', 'hinglish'):
+            spk = "Namaste! Main SARTHI hoon, aapka AI business assistant. Aaj aapke business mein kya madad kar sakta hoon?"
+            dsp = "Namaste! Main SARTHI hoon, aapka AI business intelligence assistant. Main aapke catalogue, stock, margins, aur reports mein madad kar sakta hoon."
+        else:
+            spk = "Hello! I am SARTHI, your AI business intelligence assistant. How can I help you with your business today?"
+            dsp = "Hello! I am SARTHI, your AI business intelligence assistant. How can I assist with your catalogue, stock, margins, or reports today?"
+        return {
+            "speak": spk,
+            "display": dsp,
+            "action": "greeting",
+            "source": "SARTHI Sentinel",
+            "source_type": "assistant",
+            "follow_ups": ["Show all products", "Check inventory summary", "Summarise my business performance"]
+        }
+
     # 1A. Explicit Cancellation check
     if multilingual.is_cancellation(cmd, lang=detected_lang):
         had_pending = session_ctx.get_pending_action() is not None
@@ -2596,8 +2970,14 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
             return _build_monthly_sales_trends_response(context=context, db_path=db_path, lang=detected_lang)
         elif m_intent == "compare_product_sales":
             return _build_compare_product_sales_response(m_params.get("product_a"), m_params.get("product_b"), context=context, db_path=db_path, lang=detected_lang)
+        elif m_intent == "inventory_valuation":
+            return _build_inventory_valuation_response(cat_conn, source_label="Inventory Ledger", lang=detected_lang, db_path=db_path)
+        elif m_intent == "sales_summary":
+            period = m_params.get("period", "all")
+            return _build_sales_summary_response(period=period, context=context, db_path=db_path, lang=detected_lang)
         elif m_intent == "dataset_summary":
-            return _build_dataset_summary_response(context=context, db_path=db_path, lang=detected_lang)
+            focus = m_params.get("focus")
+            return _build_dataset_summary_response(context=context, db_path=db_path, lang=detected_lang, focus=focus)
         elif m_intent == "product_price":
             target = m_params.get("product_name")
             if not target or multilingual.is_product_stopword(target):
@@ -2660,7 +3040,13 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
             return _build_supplier_response(target, cat_conn, source_label="Supplier Ledger", lang=detected_lang, db_path=db_path)
         elif m_intent == "explanation":
             concept = m_params.get("concept", cleaned_cmd)
-            target_lang = m_params.get("language") or ("Hindi" if "hindi" in c_lower else ("Hinglish" if detected_lang == "hinglish" else "English"))
+            target_lang = m_params.get("language") or ("Hindi" if any(k in c_lower for k in ["hindi", "हिन्दी", "हिंदी"]) else ("Hinglish" if detected_lang in ("hinglish", "hi") else "English"))
+            if target_lang in ("hi", "hindi"):
+                target_lang = "Hindi"
+            elif target_lang in ("hinglish",):
+                target_lang = "Hinglish"
+            elif target_lang in ("en", "english"):
+                target_lang = "English"
             expl = local_llm.generate_explanation(concept, language=target_lang)
             return {
                 "speak": expl.get("content", f"Here is the explanation for {concept}."),
@@ -2770,7 +3156,9 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
         'what does the contract say', 'according to the document', 'according to the contract',
         'contract clause', 'terms and conditions', 'warranty clause', 'payment terms',
         'delivery clause', 'delivery terms', 'in the document', 'in the pdf', 'in the contract',
-        'from the document', 'document intelligence', 'document search', 'search in document'
+        'from the document', 'document intelligence', 'document search', 'search in document',
+        'documentation', 'in the sales and product documentation', 'in the documentation', 'key terms in', 'terms in the sales',
+        'uploaded business document', 'uploaded document', 'contents of my uploaded', 'contents of the document'
     ]
     if any(t in c_lower for t in doc_triggers):
         doc_res = rag_engine.answer_document_query(cmd, dataset_id=target_doc_id, db_path=db_path)
@@ -2819,6 +3207,15 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
     if is_catalogue_list:
         return _build_product_list_response(cat_conn, source_label="Product Catalogue")
 
+    # 1B-Plural. Plural or Specific Product Stock Check (e.g. "how many chairs are available", "how many chairs do we have")
+    m_hm = re.match(r'^how many\s+(?:units\s+of\s+)?([a-z0-9_\-\s]+?)(?:\s+(?:are\s+available|do\s+we\s+have|in\s+stock|available|in\s+catalogue|are\s+there|left))?\??$', c_lower)
+    if m_hm:
+        candidate_prod = m_hm.group(1).strip()
+        if candidate_prod not in ("products", "items", "rows", "columns", "skus", "lines", "categories"):
+            resolved = _resolve_product(candidate_prod, cat_conn, db_path=db_path)
+            if resolved:
+                return _build_stock_response(candidate_prod, cat_conn, source_label="Inventory Balance", lang=detected_lang, db_path=db_path, session_id=session_id)
+
     # 1B. Total Product Count
     if any(k in c_lower for k in ['how many products do we have', 'how many products', 'total products count', 'product count', 'number of products']):
         return _build_product_count_response(cat_conn, source_label="Product Catalogue")
@@ -2845,6 +3242,15 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
             "table": {"columns": ["SKU", "NAME", "PURCHASE COST"], "rows": rows},
             "follow_ups": ["What are all products?", "Show products below reorder level"]
         }
+
+    # 1D-Reorder. Specific Product Reorder Level Check
+    if any(k in c_lower for k in ['what is the reorder level of', 'check reorder level of', 'reorder threshold of', 'reorder point of', 'reorder level of']):
+        target = c_lower
+        for pfx in ['what is the reorder level of', 'check reorder level of', 'reorder threshold of', 'reorder point of', 'reorder level of']:
+            if pfx in target:
+                target = target.split(pfx, 1)[1].strip()
+                break
+        return _build_reorder_level_response(target, cat_conn, source_label="Inventory Balance", lang=detected_lang, db_path=db_path, session_id=session_id)
 
     # 1D. Low Stock & Reorder Checks
     if any(k in c_lower for k in ['which products are low in stock', 'products low in stock', 'low stock products', 'what products are low in stock', 'show products below reorder level', 'products below reorder level', 'below reorder level']):
@@ -2877,60 +3283,22 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
         return _build_stock_response(target, cat_conn, source_label="Inventory Balance", lang=detected_lang, db_path=db_path, session_id=session_id)
 
     # 1G. Specific Product Selling Price
-    if any(k in c_lower for k in ['show the selling price of', 'what is the selling price of', 'selling price of', 'sale price of', 'retail price of']):
+    if any(k in c_lower for k in ['tell me the selling price of', 'show me the selling price of', 'show the selling price of', 'what is the selling price of', 'selling price of', 'sale price of', 'retail price of', 'price of']):
         target = c_lower
-        for pfx in ['show the selling price of', 'what is the selling price of', 'selling price of', 'sale price of', 'retail price of']:
+        for pfx in ['tell me the selling price of', 'show me the selling price of', 'show the selling price of', 'what is the selling price of', 'selling price of', 'sale price of', 'retail price of', 'price of']:
             if pfx in target:
                 target = target.split(pfx, 1)[1].strip()
                 break
-        return _build_selling_price_response(target, cat_conn, source_label="Product Catalogue")
+        return _build_selling_price_response(target, cat_conn, source_label="Product Catalogue", lang=detected_lang, db_path=db_path, session_id=session_id)
 
     # 1H. Specific Product Purchase Cost
-    if any(k in c_lower for k in ['what is the purchase price of', 'purchase price of', 'cost price of', 'buy price of', 'purchase cost of']):
+    if any(k in c_lower for k in ['tell me the purchase cost of', 'what is the purchase price of', 'what is the purchase cost of', 'purchase price of', 'purchase cost of', 'cost price of', 'buy price of', 'cost of']):
         target = c_lower
-        for pfx in ['what is the purchase price of', 'purchase price of', 'cost price of', 'buy price of', 'purchase cost of']:
+        for pfx in ['tell me the purchase cost of', 'what is the purchase price of', 'what is the purchase cost of', 'purchase price of', 'purchase cost of', 'cost price of', 'buy price of', 'cost of']:
             if pfx in target:
                 target = target.split(pfx, 1)[1].strip()
                 break
-        target = target.rstrip('?.')
-        res = database.list_products(search=target, is_active=True, conn=cat_conn)
-        items = res["items"]
-
-        if not items:
-            speak_text = f"No product matching '{target}' was found in the catalogue."
-            return {
-                "speak": speak_text,
-                "display": f"Cost: No match for '{target}'",
-                "action": "catalogue_price",
-                "source": "Product Catalogue",
-                "source_type": "catalogue",
-                "match_count": 0
-            }
-        elif len(items) > 1:
-            candidates = ", ".join([f"{p['name']} (SKU: {p['sku'] or 'N/A'})" for p in items[:3]])
-            speak_text = f"Multiple products match '{target}': {candidates}. Please clarify the exact SKU or name."
-            return {
-                "speak": speak_text,
-                "display": f"Multiple matches for '{target}'",
-                "action": "catalogue_price",
-                "source": "Product Catalogue",
-                "source_type": "catalogue",
-                "match_count": len(items),
-                "candidates": items[:5]
-            }
-        else:
-            p = items[0]
-            speak_text = f"The purchase price of {p['name']} is {p['purchase_price']} {p['currency']}. Current selling price is {p['selling_price']} {p['currency']}."
-            return {
-                "speak": speak_text,
-                "display": f"{p['name']}: Cost = ₹{p['purchase_price']:,.2f} | Selling = ₹{p['selling_price']:,.2f}",
-                "action": "catalogue_price",
-                "source": "Product Catalogue",
-                "source_type": "catalogue",
-                "match_count": 1,
-                "product": p
-            }
-
+        return _build_purchase_cost_response(target, cat_conn, source_label="Product Catalogue", lang=detected_lang, db_path=db_path, session_id=session_id)
     # 1I. Find Product by Name or SKU
     if any(k in c_lower for k in ['find product', 'search product', 'lookup product', 'find sku', 'search sku']):
         target = c_lower
@@ -3046,9 +3414,9 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
         return _build_inventory_movements_response(target, cat_conn, source_label="Stock Ledger", lang=detected_lang, db_path=db_path)
 
     # 1Q. Product Details by SKU or Name
-    if any(k in c_lower for k in ['show details for', 'product details for', 'details of product', 'details for product', 'details for sku', 'sku details']):
+    if any(k in c_lower for k in ['show me the details of', 'show details of', 'show details for', 'product details for', 'details of product', 'details for product', 'details for sku', 'details of', 'sku details']):
         target = c_lower
-        for pfx in ['show details for product', 'show details for sku', 'show details for', 'product details for', 'details of product', 'details for product', 'details for sku', 'sku details']:
+        for pfx in ['show me the details of', 'show details of', 'show details for product', 'show details for sku', 'show details for', 'product details for', 'details of product', 'details for product', 'details for sku', 'details of', 'sku details']:
             if pfx in target:
                 target = target.split(pfx, 1)[1].strip()
                 break
@@ -3353,6 +3721,14 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
     # 3. EXISTING BUSINESS INTELLIGENCE REPORTS & DOSSIERS
     # =========================================================================
 
+    # 3A-1. Executive Business Performance / Operational Summary
+    if any(k in c_lower for k in [
+        'summarise my business performance', 'summarize my business performance',
+        'business performance', 'performance summary', 'business summary', 'executive summary',
+        'company performance', 'overall performance', 'business overview'
+    ]):
+        return _build_business_performance_response(cat_conn, db_path=db_path, lang=detected_lang, context=context)
+
     if any(k in c_lower for k in ['analyze this file', 'complete report', 'bi report', 'business report', 'full report']) or (c_lower == 'report'):
         bi_rep = context.get("current_bi_report")
         if not bi_rep:
@@ -3419,7 +3795,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
                 "follow_ups": ["Show all products", "Check inventory summary"]
             }
 
-        return _build_catalogue_margin_response(cat_conn, context=context, db_path=db_path, source_label="Commercial Intelligence", lang=resp_lang)
+        return _build_catalogue_margin_response(cat_conn, context=context, db_path=db_path, source_label="Commercial Intelligence", lang=detected_lang)
 
     # 3C. Inventory Telemetry & Low Stock Status
     if any(k in c_lower for k in ['low stock status', 'inventory status', 'bi inventory', 'stock status']):
@@ -3639,6 +4015,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
     ]
     is_general_query = (
         bool(re.search(r'^(who|what|where|when|why|how)\s+(is|was|are|were|do|does|did|can)\b', c_lower)) or
+        bool(re.search(r'^(explain|tell me about|describe|define)\b', c_lower)) or
         any(w in c_lower for w in ['who is', 'who was', 'koun hai', 'kon hai', 'tell me about', 'what is the capital', 'history of'])
     ) and not any(b in c_lower for b in business_indicators)
 
@@ -3648,11 +4025,13 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
             chat_resp = local_llm.generate_chat_response(cmd, language=detected_lang)
             if chat_resp.get("success") and chat_resp.get("content"):
                 c_text = chat_resp["content"]
+                if local_llm.is_internal_reasoning_leaked(c_text):
+                    c_text = local_llm.clean_or_recover_response(c_text, query=cmd, language=detected_lang)
                 return {
                     "speak": c_text,
                     "display": c_text,
                     "action": "general_chat",
-                    "source": f"Local AI ({chat_resp.get('model', 'qwen3:4b-instruct')})",
+                    "source": f"Local AI ({chat_resp.get('model', 'gemma4:e2b')})",
                     "source_type": "llm",
                     "inference_time_seconds": chat_resp.get("inference_time_seconds"),
                     "follow_ups": ["Show all products", "Check inventory summary"]
@@ -3668,7 +4047,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
                 "follow_ups": ["Show all products", "Check inventory summary", "How many products do we have?"]
             }
         elif health_status == "model_missing" or not health.get("model_available"):
-            cfg_model = health.get("configured_model", "qwen3:4b-instruct")
+            cfg_model = health.get("configured_model", "gemma4:e2b")
             return {
                 "speak": f"The configured local model '{cfg_model}' is not installed in Ollama. Product catalogue and business reports remain operational.",
                 "display": f"Model Missing: {cfg_model}",
@@ -3689,7 +4068,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
         intent = llm_intent_data["intent"]
         params = llm_intent_data.get("parameters", {})
         entity = llm_intent_data.get("entity", "")
-        model_name = llm_intent_data.get("model", "qwen3:4b-instruct")
+        model_name = llm_intent_data.get("model", "gemma4:e2b")
         resp_lang = llm_intent_data.get("response_language") or detected_lang
 
         if intent == "general_knowledge":
@@ -3832,6 +4211,11 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
         elif intent == "out_of_scope":
             return _build_out_of_scope_response(cmd, lang=resp_lang)
 
+    # 5B-3. Direct single product lookup (e.g. user typed "Chair", "chair", "Capacitor", "CAP-20")
+    exact_prods = _resolve_product(cleaned_cmd, cat_conn, db_path=db_path)
+    if len(exact_prods) == 1:
+        return _build_product_details_response(cleaned_cmd, cat_conn, source_label="Product Catalogue", lang=detected_lang, db_path=db_path)
+
     # 5C. Check if local Ollama LLM can generate a dynamic conversational response
     chat_resp = {}
     try:
@@ -3845,7 +4229,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
             "speak": c_text,
             "display": c_text,
             "action": "general_chat",
-            "source": f"Local AI ({chat_resp.get('model', 'qwen')})",
+            "source": f"Local AI ({chat_resp.get('model', 'gemma4:e2b')})",
             "source_type": "llm",
             "inference_time_seconds": chat_resp.get("inference_time_seconds"),
             "follow_ups": ["Saare products dikhao", "What is gross margin?", "Check inventory summary"]
@@ -3865,7 +4249,7 @@ def _route_intent_internal(cmd: str, c_lower: str, context: Dict[str, Any], db_p
             "follow_ups": ["Show all products", "Check inventory summary", "How many products do we have?"]
         }
     elif health_status == "model_missing" or not health.get("model_available"):
-        cfg_model = health.get("configured_model", "qwen3:4b-instruct")
+        cfg_model = health.get("configured_model", "gemma4:e2b")
         return {
             "speak": f"The configured local model '{cfg_model}' is not installed in Ollama. Product catalogue and business reports remain operational.",
             "display": f"Model Missing: {cfg_model}",

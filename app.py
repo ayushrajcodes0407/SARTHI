@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import re
 import time
 import datetime
@@ -149,7 +150,7 @@ def get_status():
             },
             "local_llm": {
                 "status": llm_health.get("status"),
-                "label": f"LOCAL AI ({llm_health.get('configured_model', 'qwen3:4b-instruct')})",
+                "label": f"LOCAL AI ({llm_health.get('configured_model', 'gemma4:e2b')})",
                 "healthy": llm_ok,
                 "model": llm_health.get("configured_model"),
                 "service_running": llm_health.get("service_running"),
@@ -191,7 +192,7 @@ def get_llm_status():
 def manage_llm_model():
     """
     GET: Returns currently active model, fallback model, supported models, and loaded models.
-    POST: Selects and switches active model (e.g. 'qwen3:4b-instruct' vs 'gemma4:e2b'),
+    POST: Selects and switches active model (e.g. 'gemma4:e2b' vs 'gemma4:e2b'),
           unloading the displaced model from memory via keep_alive: 0 to avoid RAM contention.
     """
     if request.method == 'POST':
@@ -791,7 +792,26 @@ def generate_report():
             logger.warning(f"Regeneration failure: {exc}")
             return jsonify({"success": False, "error": f"Failed to generate report: {str(exc)}"}), 500
 
-    # 4. No file imported yet
+    # 4. Targeted dataset specified in request
+    target_ds_id = None
+    if request.is_json and request.get_json(silent=True):
+        target_ds_id = request.get_json().get("dataset_id")
+    if not target_ds_id:
+        target_ds_id = request.args.get("dataset_id")
+
+    if target_ds_id:
+        ds = database.get_dataset_by_id(target_ds_id)
+        if ds:
+            latest_rep = database.get_latest_report_for_dataset(target_ds_id)
+            if latest_rep and latest_rep.get("report_content"):
+                CURRENT_BI_REPORT = latest_rep["report_content"]
+                return jsonify({
+                    "success": True,
+                    "report": CURRENT_BI_REPORT,
+                    "message": f"Report for dataset '{ds['original_filename']}' retrieved successfully."
+                }), 200
+
+    # 5. No file or targeted dataset imported yet
     return jsonify({
         "success": False,
         "error": "No file currently imported. Please import an Excel or PDF file first."
@@ -813,23 +833,41 @@ def get_bi_report():
 @app.route('/api/export-report', methods=['GET'])
 def export_bi_report():
     global CURRENT_BI_REPORT
-    if CURRENT_BI_REPORT is None:
+    report_to_export = CURRENT_BI_REPORT
+    report_id = request.args.get('report_id')
+    if report_id:
+        db_rep = database.get_report_by_id(report_id)
+        if db_rep and db_rep.get("report_content"):
+            report_to_export = db_rep["report_content"]
+
+    if report_to_export is None:
+        try:
+            existing_reps = database.list_all_reports(page=1, page_size=1)
+            if existing_reps.get("items"):
+                first_rep = database.get_report_by_id(existing_reps["items"][0]["report_id"])
+                if first_rep and first_rep.get("report_content"):
+                    report_to_export = first_rep["report_content"]
+                    CURRENT_BI_REPORT = report_to_export
+        except Exception:
+            pass
+
+    if report_to_export is None:
         return jsonify({
             "success": False,
             "error": "No business dataset currently analyzed. Please upload an Excel or PDF document first."
         }), 404
 
     export_format = request.args.get('format', 'html').strip().lower()
-    raw_name = CURRENT_BI_REPORT.get("file_name", "dataset")
+    raw_name = report_to_export.get("file_name", "dataset")
     safe_name = "".join(c for c in raw_name if c.isalnum() or c in ('_', '-')) or "dataset"
 
     if export_format == 'json':
-        resp = jsonify(CURRENT_BI_REPORT)
+        resp = jsonify(report_to_export)
         resp.headers['Content-Disposition'] = f'attachment; filename="sarthi_bi_report_{safe_name}.json"'
         return resp
 
     elif export_format == 'csv':
-        csv_str = business_insights.export_report_to_csv(CURRENT_BI_REPORT)
+        csv_str = business_insights.export_report_to_csv(report_to_export)
         return Response(
             csv_str,
             mimetype='text/csv',
@@ -837,7 +875,7 @@ def export_bi_report():
         )
 
     elif export_format == 'html':
-        html_str = business_insights.export_report_to_html(CURRENT_BI_REPORT)
+        html_str = business_insights.export_report_to_html(report_to_export)
         return Response(
             html_str,
             mimetype='text/html',
@@ -929,6 +967,134 @@ def get_dataset_reports(dataset_id):
     except Exception as e:
         logger.error(f"Error fetching reports for {dataset_id}: {e}")
         return jsonify({"success": False, "error": "Failed to retrieve reports."}), 500
+
+@app.route('/api/reports', methods=['GET'])
+def get_all_reports():
+    """Returns all saved business reports with metadata, sorting, and pagination."""
+    page = int(request.args.get('page', 1))
+    page_size = int(request.args.get('page_size', 20))
+    search = request.args.get('search', '').strip()
+    report_type = request.args.get('report_type')
+    try:
+        res = database.list_all_reports(page=page, page_size=page_size, search=search, report_type=report_type)
+        return jsonify({"success": True, **res}), 200
+    except Exception as e:
+        logger.error(f"Error fetching all reports: {e}")
+        return jsonify({"success": False, "error": "Failed to retrieve reports archive."}), 500
+
+
+@app.route('/api/reports/<report_id>', methods=['DELETE'])
+def delete_single_report(report_id):
+    """Deletes a specific saved report artifact."""
+    try:
+        ok = database.delete_report(report_id)
+        if not ok:
+            return jsonify({"success": False, "error": f"Report '{report_id}' not found."}), 404
+        return jsonify({"success": True, "message": f"Report '{report_id}' deleted."}), 200
+    except Exception as e:
+        logger.error(f"Error deleting report {report_id}: {e}")
+        return jsonify({"success": False, "error": "Failed to delete report."}), 500
+
+
+@app.route('/api/bi/analytics', methods=['GET'])
+def get_bi_live_analytics():
+    """Returns live business analytics and KPI telemetry across the business and datasets."""
+    dataset_id = request.args.get('dataset_id')
+    try:
+        res = database.get_live_business_analytics(dataset_id=dataset_id)
+        return jsonify(res), 200
+    except Exception as e:
+        logger.error(f"Error fetching live business analytics: {e}")
+        return jsonify({"success": False, "error": "Failed to load live business analytics."}), 500
+
+
+@app.route('/api/document-library', methods=['GET'])
+def get_document_library():
+    """Returns knowledge documents (PDF, DOCX) and RAG indexing telemetry."""
+    search = request.args.get('search', '').strip()
+    try:
+        rag_summary = rag_engine.get_rag_status_summary()
+        all_docs = rag_summary.get("documents", [])
+        
+        # Also query datasets table for any knowledge documents (pdf, docx, txt)
+        ds_res = database.list_datasets(page_size=100, search=search)
+        all_datasets = ds_res.get("items", [])
+        
+        # Filter for knowledge documents or RAG indexed documents
+        knowledge_docs = []
+        seen_ids = set()
+        
+        # 1. RAG documents
+        for doc in all_docs:
+            if doc.get("dataset_id") not in seen_ids:
+                seen_ids.add(doc["dataset_id"])
+                knowledge_docs.append({
+                    "id": doc.get("dataset_id"),
+                    "name": doc.get("original_filename"),
+                    "file_type": doc.get("file_type", "pdf"),
+                    "size_bytes": doc.get("file_size_bytes", 0),
+                    "status": doc.get("index_status", "indexed"),
+                    "chunk_count": doc.get("chunk_count", 0),
+                    "indexed_at": doc.get("indexed_at") or doc.get("uploaded_at"),
+                    "error_message": doc.get("error_message"),
+                    "embedding_provider": doc.get("embedding_provider") or rag_summary.get("embedding_provider")
+                })
+        
+        # 2. Add PDF/DOCX datasets from database that may not be in RAG list
+        for ds in all_datasets:
+            if ds.get("file_type", "").lower() in ("pdf", "docx", "doc", "txt") and ds["id"] not in seen_ids:
+                seen_ids.add(ds["id"])
+                knowledge_docs.append({
+                    "id": ds["id"],
+                    "name": ds.get("original_filename"),
+                    "file_type": ds.get("file_type"),
+                    "size_bytes": ds.get("file_size_bytes", 0),
+                    "status": ds.get("index_status", "unindexed"),
+                    "chunk_count": ds.get("chunk_count", 0),
+                    "indexed_at": ds.get("indexed_at") or ds.get("created_at"),
+                    "error_message": ds.get("index_error_message"),
+                    "embedding_provider": rag_summary.get("embedding_provider")
+                })
+                
+        if search:
+            knowledge_docs = [d for d in knowledge_docs if search.lower() in d["name"].lower()]
+
+        return jsonify({
+            "success": True,
+            "total_documents": len(knowledge_docs),
+            "indexed_count": sum(1 for d in knowledge_docs if d.get("status") == "indexed"),
+            "total_chunks": sum(d.get("chunk_count", 0) for d in knowledge_docs),
+            "embedding_provider": rag_summary.get("embedding_provider", "sklearn_tfidf_cosine"),
+            "documents": knowledge_docs
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching document library: {e}")
+        return jsonify({"success": False, "error": "Failed to load document library."}), 500
+
+
+@app.route('/api/rag/documents/<dataset_id>/chunks', methods=['GET'])
+def get_document_chunks(dataset_id):
+    """Returns chunks preview for an indexed document."""
+    try:
+        conn = database.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, chunk_index, chunk_text, page_number, sheet_name, row_range, char_count, token_count, created_at
+            FROM document_chunks
+            WHERE dataset_id = ?
+            ORDER BY chunk_index ASC
+            LIMIT 50
+            """,
+            (dataset_id,)
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify({"success": True, "dataset_id": dataset_id, "chunks": rows, "count": len(rows)}), 200
+    except Exception as e:
+        logger.error(f"Error fetching chunks for {dataset_id}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route('/api/reports/<report_id>', methods=['GET'])
 def get_single_report(report_id):
@@ -1397,6 +1563,98 @@ def process_command():
             "source": "SARTHI Core",
             "source_type": "system"
         }), 200
+
+
+
+@app.route('/api/command/stream', methods=['POST'])
+def process_command_stream():
+    """
+    Streaming command execution endpoint using Server-Sent Events (SSE).
+    Streams LLM tokens incrementally for conversational responses, while
+    providing synchronous action cards and voice responses upon completion.
+    """
+    data = request.get_json(silent=True) or {}
+    raw_cmd = data.get('command', '').strip()
+    req_model = data.get('model')
+    request_id = data.get('request_id') or f"req_{int(time.time()*1000)}"
+    session_id = data.get('session_id')
+
+    context = {
+        "active_dataset_id": CURRENT_FILE_INFO.get("dataset_id") if CURRENT_FILE_INFO else None,
+        "current_file_info": CURRENT_FILE_INFO,
+        "current_bi_report": CURRENT_BI_REPORT,
+        "session_id": session_id,
+        "model": req_model
+    }
+
+    def generate_events():
+        t0 = time.time()
+        # Immediately send connection event so SSE client establishes connection
+        yield "event: connect\ndata: " + json.dumps({"status": "connected", "request_id": request_id}) + "\n\n"
+
+        # Check if conversational query can be streamed directly token-by-token
+        if intent_router.is_conversational_query(raw_cmd):
+            try:
+                active_model = req_model or local_llm.get_active_model()
+                import multilingual
+                _, detected_lang = multilingual.clean_query(raw_cmd)
+                accumulated_tokens = []
+                for tok in local_llm.stream_chat_response(raw_cmd, language=detected_lang, model=active_model):
+                    if tok:
+                        accumulated_tokens.append(tok)
+                        yield f"event: token\ndata: {json.dumps({'token': tok})}\n\n"
+                
+                full_text = "".join(accumulated_tokens).strip()
+                if local_llm.is_internal_reasoning_leaked(full_text):
+                    full_text = local_llm.clean_or_recover_response(full_text, query=raw_cmd, language=detected_lang)
+                
+                elapsed = round((time.time() - t0) * 1000, 1)
+                final_resp = {
+                    "speak": full_text,
+                    "display": full_text,
+                    "action": "general_chat",
+                    "source": f"Local AI ({active_model})",
+                    "source_type": "llm",
+                    "latency_ms": elapsed,
+                    "request_id": request_id,
+                    "follow_ups": ["Show all products", "Check inventory summary", "Summarise my business performance"]
+                }
+                yield f"event: done\ndata: {json.dumps(final_resp)}\n\n"
+                return
+            except Exception as _stream_err:
+                pass
+
+        # Step 1: Route intent
+        try:
+            response = intent_router.route_intent(raw_cmd, context=context, request_id=request_id, model=req_model)
+            elapsed = round((time.time() - t0) * 1000, 1)
+            response["latency_ms"] = elapsed
+            if not response.get("request_id"):
+                response["request_id"] = request_id
+
+            # If action has speak text, simulate streaming tokens for UX or send response
+            text = response.get("speak") or response.get("display") or ""
+            words = text.split(" ")
+            for i, w in enumerate(words):
+                token_data = json.dumps({"token": w + (" " if i < len(words) - 1 else "")})
+                yield f"event: token\ndata: {token_data}\n\n"
+
+            # Final complete event with structured cards, table, and metadata
+            final_data = json.dumps(response)
+            yield f"event: done\ndata: {final_data}\n\n"
+        except Exception as e:
+            err_data = json.dumps({
+                "action": "error",
+                "speak": str(e),
+                "display": f"Error: {str(e)}",
+                "source": "SARTHI Core"
+            })
+            yield f"event: error\ndata: {err_data}\n\n"
+
+    from flask import Response
+    return Response(generate_events(), mimetype='text/event-stream')
+
+
 
 
 if __name__ == '__main__':

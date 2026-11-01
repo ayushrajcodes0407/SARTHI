@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Enterprise-Grade, Privacy-First Commercial Intelligence & Autonomous Inventory Command</strong><br>
-  <em>100% Localhost Execution &bull; Zero Cloud API Subscriptions &bull; Deterministic Financial Arithmetic &bull; Local Qwen LLM Integration</em>
+  <em>100% Localhost Execution &bull; Zero Cloud API Subscriptions &bull; Deterministic Financial Arithmetic &bull; Primary Gemma 4 AI + Qwen3 Fallback</em>
 </p>
 
 <p align="center">
@@ -14,7 +14,8 @@
   <a href="https://flask.palletsprojects.com/"><img src="https://img.shields.io/badge/Flask-2.3%2B-000000?style=for-the-badge&logo=flask&logoColor=white" alt="Flask" /></a>
   <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-3.35%2B-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" /></a>
   <a href="https://ollama.com/"><img src="https://img.shields.io/badge/Ollama-Local%20Daemon-101828?style=for-the-badge&logo=ollama&logoColor=white" alt="Ollama Local Daemon" /></a>
-  <a href="https://github.com/QwenLM/Qwen"><img src="https://img.shields.io/badge/Model-Qwen3%3A4B--Instruct-6366F1?style=for-the-badge&logo=huggingface&logoColor=white" alt="Qwen3 4B Instruct" /></a>
+  <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Primary%20AI-Gemma4%3Ae2b-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemma4:e2b" /></a>
+  <a href="https://github.com/QwenLM/Qwen"><img src="https://img.shields.io/badge/Fallback%20AI-Qwen3%3A4B-6366F1?style=for-the-badge&logo=huggingface&logoColor=white" alt="Qwen3 4B Instruct" /></a>
   <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"><img src="https://img.shields.io/badge/JavaScript-ES6%2B-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript ES6+" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="MIT License" /></a>
   <a href="#18-testing--quality-assurance"><img src="https://img.shields.io/badge/Test%20Suite-219%20Passing-success?style=for-the-badge&logo=checkmarx&logoColor=white" alt="219 Tests Passing" /></a>
@@ -878,6 +879,21 @@ SARTHI/
 </table>
 
 ---
+
+
+---
+
+## 22. Enterprise Disaster Recovery & Deployment
+
+SARTHI is hardened for enterprise production environments:
+
+- **Primary & Fallback AI Architecture:** Local Ollama running `gemma4:e2b` as primary with automatic failover to `qwen3:4b-instruct`. Strict single-model memory residency is enforced with automatic RAM unloading after fallback queries.
+- **Enterprise Online Backups:** Consistent, atomic SQLite online backups using `sqlite3_backup` API via `backup_manager.py` and REST endpoints (`/api/admin/backup`, `/api/admin/backups`, `/api/admin/restore`, `/api/admin/backups/prune`).
+- **Integrity Verification:** Every backup archive is verified via `PRAGMA integrity_check` before retention.
+- **Export Versatility:** Dossiers can be exported in HTML, CSV, JSON, and Markdown formats.
+- **Operational Logging:** Rotating log files (`logs/sarthi.log`, 5MB x 5 backups) and HTTP security headers (`nosniff`, `SAMEORIGIN`, `strict-origin-when-cross-origin`).
+
+For full infrastructure runbooks, Waitress/Gunicorn configurations, and cloud hosted limitations, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 23. License & Intellectual Property
 

@@ -2216,7 +2216,7 @@ Arc Reactor Generation IV, Mark 85 Autonomous Avionics System
         self.assertIn("service_running", data)
         self.assertIn("model_available", data)
         self.assertIn("configured_model", data)
-        self.assertEqual(data["configured_model"], "qwen3:4b-instruct")
+        self.assertEqual(data["configured_model"], "gemma4:e2b")
         self.assertTrue(data["base_url"].startswith("http://127.0.0.1") or data["base_url"].startswith("http://localhost"))
         print(f"[PASS] Ollama health check endpoint verified: service_running={data['service_running']}, model_available={data['model_available']}")
 
@@ -2776,7 +2776,7 @@ Arc Reactor Generation IV, Mark 85 Autonomous Avionics System
         # 13. Invalid model output handling
         with patch("requests.get") as mock_get, patch("requests.post") as mock_post:
             mock_get.return_value.status_code = 200
-            mock_get.return_value.json.return_value = {"models": [{"name": "qwen3:4b-instruct"}]}
+            mock_get.return_value.json.return_value = {"models": [{"name": "gemma4:e2b"}, {"name": "qwen3:4b-instruct"}]}
             mock_post.return_value.status_code = 200
             # Return broken non-JSON string
             mock_post.return_value.json.return_value = {"message": {"content": "INVALID_BROKEN_JSON_}{"}}

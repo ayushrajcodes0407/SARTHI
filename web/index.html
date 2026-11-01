@@ -99,15 +99,15 @@
                         <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></span>
                         <span class="btn-label">PRODUCT CATALOGUE</span>
                     </button>
-                    <button class="action-btn" id="btnDocumentLibrary" onclick="openDocumentLibrary()" title="Open Saved Document & Dataset Library">
+                    <button class="action-btn" id="btnDocumentLibrary" onclick="openDocumentLibrary()" title="Open Enterprise Document Knowledge Library & RAG Telemetry">
                         <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg></span>
                         <span class="btn-label">DOCUMENT LIBRARY</span>
                     </button>
-                    <button class="action-btn" id="btnSavedDatasets" onclick="toggleRightSidebar(true)" title="Open Saved Data Library in Tactical Intel">
+                    <button class="action-btn" id="btnSavedDatasets" onclick="openSavedDatasets()" title="Open Structured Dataset Repository & Profiling">
                         <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg></span>
                         <span class="btn-label">SAVED DATASETS</span>
                     </button>
-                    <button class="action-btn" id="btnBusinessReports" onclick="launchReport()" title="Launch Automated Business Report">
+                    <button class="action-btn" id="btnBusinessReports" onclick="openBusinessReports()" title="Open Business Reports Archive & Generator">
                         <span class="btn-icon"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span>
                         <span class="btn-label">BUSINESS REPORTS</span>
                     </button>
@@ -510,6 +510,12 @@
                     </div>
                 </div>
                 <div class="bi-header-actions">
+                    <div class="bi-dataset-selector-wrapper" style="margin-right: 12px; display: inline-flex; align-items: center; gap: 6px;">
+                        <span class="export-label" style="color: var(--gold-champagne);">DATASET:</span>
+                        <select id="biDatasetSelect" class="cat-filter-select" style="padding: 4px 8px; font-size: 11px; height: 30px;" onchange="onBIDatasetChange(this.value)">
+                            <option value="">Live Operations & Active Catalogue</option>
+                        </select>
+                    </div>
                     <div class="export-group">
                         <span class="export-label">EXPORT:</span>
                         <button type="button" class="export-btn" onclick="exportCurrentReport('html')">HTML</button>
@@ -1027,7 +1033,301 @@
         </div>
     </div>
 
-    <footer class="hud-footer">
+        <!-- ============================================================== -->
+    <!-- SARTHI DEDICATED DESTINATIONS: REPORTS, DATASETS, DOC LIBRARY   -->
+    <!-- ============================================================== -->
+
+    <!-- Dedicated Business Reports Archive & Generator Modal -->
+    <div class="bi-modal-overlay" id="businessReportsModal" style="display: none;">
+        <div class="bi-modal-container reports-container">
+            <!-- Modal Header -->
+            <div class="bi-modal-header">
+                <div class="bi-header-title-group">
+                    <span class="bi-reactor-glow"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
+                    <div>
+                        <h2 class="bi-title">BUSINESS REPORTS ARCHIVE & GENERATOR</h2>
+                        <div class="bi-meta-sub">
+                            <span class="bi-badge" id="reportsCountBadge">0 REPORTS ARCHIVED</span>
+                            <span class="bi-meta-text">AUTOMATED INTELLIGENCE ARTIFACTS & DOSSIERS</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bi-header-actions">
+                    <button type="button" class="cat-btn-primary" id="btnGenerateReportModal" onclick="generateNewReportFromModal()">
+                        <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> + GENERATE NEW REPORT
+                    </button>
+                    <button type="button" class="cat-btn-secondary" onclick="loadBusinessReports()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> REFRESH</button>
+                    <button type="button" class="bi-close-btn" onclick="closeBusinessReports()" title="Close Reports Archive"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                </div>
+            </div>
+
+            <!-- Filter and Search Toolbar -->
+            <div class="cat-filter-bar">
+                <div class="cat-search-box">
+                    <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="reportSearchInput" placeholder="Search reports by title, dataset or ID..." oninput="onReportsSearch(this.value)">
+                </div>
+                <div class="cat-filter-group">
+                    <select id="reportTypeFilter" class="cat-filter-select" onchange="onReportsFilterChange()">
+                        <option value="">ALL REPORT TYPES</option>
+                        <option value="full_bi">Full Business Intelligence</option>
+                        <option value="sales">Sales & Revenue</option>
+                        <option value="inventory">Inventory & Stock</option>
+                        <option value="pricing">Pricing & Margin</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Reports List Table Container -->
+            <div class="cat-table-wrapper" style="max-height: calc(85vh - 200px); overflow-y: auto;">
+                <table class="cat-table" id="businessReportsTable">
+                    <thead>
+                        <tr>
+                            <th>REPORT ID</th>
+                            <th>REPORT TITLE</th>
+                            <th>TYPE</th>
+                            <th>SOURCE DATASET</th>
+                            <th>GENERATED AT</th>
+                            <th>FORMAT</th>
+                            <th>STATUS</th>
+                            <th style="text-align: right;">ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="businessReportsTbody">
+                        <!-- Rendered by JS -->
+                    </tbody>
+                </table>
+                <div id="businessReportsEmptyState" class="empty-dossier-state" style="display: none;">
+                    <div class="empty-icon"><svg class="lucide-icon icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
+                    <h3>NO BUSINESS REPORTS ARCHIVED</h3>
+                    <p>Generate a comprehensive intelligence dossier from your live operations or uploaded commercial datasets.</p>
+                    <button type="button" class="cat-btn-primary" onclick="generateNewReportFromModal()" style="margin-top: 12px;">+ GENERATE BUSINESS REPORT</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Preview Dossier Submodal -->
+    <div class="cat-submodal-overlay" id="reportPreviewModal" style="display: none;">
+        <div class="cat-submodal-box" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="cat-submodal-header">
+                <div>
+                    <h3 id="reportPreviewTitle">BUSINESS INTELLIGENCE REPORT</h3>
+                    <span id="reportPreviewMeta" class="bi-meta-text" style="font-size: 11px;">--</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <div class="export-group">
+                        <button type="button" class="export-btn" id="previewExportHtml">HTML</button>
+                        <button type="button" class="export-btn" id="previewExportCsv">CSV</button>
+                        <button type="button" class="export-btn" id="previewExportJson">JSON</button>
+                        
+                    </div>
+                    <button type="button" class="cat-btn-close" onclick="closeReportPreview()"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                </div>
+            </div>
+            <div class="cat-submodal-body" id="reportPreviewContent" style="overflow-y: auto; flex: 1; padding: 20px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+                <!-- Injected via JS -->
+            </div>
+            <div class="form-actions">
+                <button type="button" class="cat-btn-cancel" onclick="closeReportPreview()">CLOSE PREVIEW</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dedicated Saved Datasets Management Modal -->
+    <div class="bi-modal-overlay" id="savedDatasetsModal" style="display: none;">
+        <div class="bi-modal-container datasets-container">
+            <!-- Modal Header -->
+            <div class="bi-modal-header">
+                <div class="bi-header-title-group">
+                    <span class="bi-reactor-glow"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg></span>
+                    <div>
+                        <h2 class="bi-title">STRUCTURED DATASET REPOSITORY</h2>
+                        <div class="bi-meta-sub">
+                            <span class="bi-badge" id="savedDatasetsCountBadge">0 DATASETS</span>
+                            <span class="bi-meta-text">TABULAR BUSINESS DATA, SCHEMA PROFILES & HYGIENE</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bi-header-actions">
+                    <button type="button" class="cat-btn-primary" onclick="triggerDatasetUploadModal()">
+                        <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> + INGEST DATASET
+                    </button>
+                    <button type="button" class="cat-btn-secondary" onclick="loadSavedDatasetsModal()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> REFRESH</button>
+                    <button type="button" class="bi-close-btn" onclick="closeSavedDatasets()" title="Close Dataset Repository"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                </div>
+            </div>
+
+            <!-- Datasets Telemetry Summary -->
+            <div class="cat-kpi-row" id="datasetsKpiRow">
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">TOTAL DATASETS</span>
+                    <span class="kpi-val cyan" id="dsKpiTotal">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">INGESTED ROWS</span>
+                    <span class="kpi-val" id="dsKpiRows">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">COLUMNS MAPPED</span>
+                    <span class="kpi-val" id="dsKpiCols">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">FORMATS</span>
+                    <span class="kpi-val gold" id="dsKpiFormats">CSV / XLSX</span>
+                </div>
+            </div>
+
+            <!-- Filter and Search Toolbar -->
+            <div class="cat-filter-bar">
+                <div class="cat-search-box">
+                    <svg class="lucide-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="savedDatasetsSearchInput" placeholder="Search datasets by name or type..." oninput="onSavedDatasetsSearch(this.value)">
+                </div>
+                <div class="cat-filter-group">
+                    <select id="savedDatasetsFormatFilter" class="cat-filter-select" onchange="onSavedDatasetsFilterChange()">
+                        <option value="">ALL FORMATS</option>
+                        <option value="xlsx">Excel Spreadsheet (.xlsx)</option>
+                        <option value="csv">Comma-Separated (.csv)</option>
+                        <option value="xls">Legacy Excel (.xls)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Datasets Table -->
+            <div class="cat-table-wrapper" style="max-height: calc(85vh - 250px); overflow-y: auto;">
+                <table class="cat-table" id="savedDatasetsTable">
+                    <thead>
+                        <tr>
+                            <th>DATASET ID</th>
+                            <th>DATASET NAME</th>
+                            <th>FORMAT</th>
+                            <th>ROWS</th>
+                            <th>COLUMNS</th>
+                            <th>CLASSIFICATION</th>
+                            <th>INGESTED AT</th>
+                            <th style="text-align: right;">ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="savedDatasetsTbody">
+                        <!-- Rendered by JS -->
+                    </tbody>
+                </table>
+                <div id="savedDatasetsEmptyState" class="empty-dossier-state" style="display: none;">
+                    <div class="empty-icon"><svg class="lucide-icon icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg></div>
+                    <h3>NO STRUCTURED DATASETS INGESTED</h3>
+                    <p>Ingest CSV, XLSX, or XLS business files to analyze metrics, map catalogues, and uncover trends.</p>
+                    <button type="button" class="cat-btn-primary" onclick="triggerDatasetUploadModal()" style="margin-top: 12px;">+ INGEST FIRST DATASET</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dedicated Document Library & Knowledge Base Modal -->
+    <div class="bi-modal-overlay" id="documentLibraryModal" style="display: none;">
+        <div class="bi-modal-container docs-container">
+            <!-- Modal Header -->
+            <div class="bi-modal-header">
+                <div class="bi-header-title-group">
+                    <span class="bi-reactor-glow"><svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg></span>
+                    <div>
+                        <h2 class="bi-title">ENTERPRISE DOCUMENT & KNOWLEDGE LIBRARY</h2>
+                        <div class="bi-meta-sub">
+                            <span class="bi-badge" id="docLibCountBadge">0 DOCUMENTS INDEXED</span>
+                            <span class="bi-meta-text" id="docLibProviderBadge">EMBEDDINGS: SKLEARN_TFIDF_COSINE</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bi-header-actions">
+                    <button type="button" class="cat-btn-primary" onclick="triggerDocUploadModal()">
+                        <svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> + UPLOAD DOCUMENT
+                    </button>
+                    <button type="button" class="cat-btn-secondary" onclick="loadDocumentLibraryModal()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> REFRESH</button>
+                    <button type="button" class="bi-close-btn" onclick="closeDocumentLibrary()" title="Close Document Library"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                </div>
+            </div>
+
+            <!-- Knowledge HUD Telemetry -->
+            <div class="cat-kpi-row" id="docLibKpiRow">
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">INDEXED KNOWLEDGE DOCS</span>
+                    <span class="kpi-val cyan" id="docKpiTotal">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">TOTAL VECTOR CHUNKS</span>
+                    <span class="kpi-val" id="docKpiChunks">0</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">RAG ENGINE PIPELINE</span>
+                    <span class="kpi-val green" id="docKpiPipeline">ONLINE</span>
+                </div>
+                <div class="cat-kpi-card">
+                    <span class="kpi-label">SUPPORTED FORMATS</span>
+                    <span class="kpi-val gold">PDF / DOCX / TXT</span>
+                </div>
+            </div>
+
+            <!-- Semantic Retrieval Test Sandbox -->
+            <div class="rag-search-box-container" style="background: rgba(0, 243, 255, 0.03); border: 1px solid rgba(0, 243, 255, 0.15); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-family: var(--font-header); font-size: 11px; letter-spacing: 1px; color: var(--gold-champagne);">RAG SEMANTIC RETRIEVAL TEST SANDBOX</span>
+                    <span style="font-family: var(--font-mono); font-size: 10px; color: var(--cyan);">LIVE VECTOR SEARCH</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="ragTestInput" placeholder="Test semantic retrieval (e.g. 'What is our regional sales performance?')..." style="flex: 1; background: rgba(10, 16, 26, 0.85); border: 1px solid var(--border-color); color: #fff; padding: 8px 12px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px;" onkeydown="if(event.key==='Enter') testRagRetrieval()">
+                    <button type="button" class="cat-btn-primary" onclick="testRagRetrieval()" style="white-space: nowrap;"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> TEST RETRIEVAL</button>
+                </div>
+                <div id="ragTestResults" style="display: none; margin-top: 10px; padding: 10px; background: rgba(6, 11, 20, 0.95); border: 1px solid rgba(0, 243, 255, 0.2); border-radius: 4px; max-height: 180px; overflow-y: auto;"></div>
+            </div>
+
+            <!-- Document List Table -->
+            <div class="cat-table-wrapper" style="max-height: calc(85vh - 330px); overflow-y: auto;">
+                <table class="cat-table" id="docLibTable">
+                    <thead>
+                        <tr>
+                            <th>DOCUMENT NAME</th>
+                            <th>TYPE</th>
+                            <th>FILE SIZE</th>
+                            <th>CHUNKS</th>
+                            <th>INDEX STATUS</th>
+                            <th>INGESTED AT</th>
+                            <th style="text-align: right;">ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="docLibTbody">
+                        <!-- Rendered by JS -->
+                    </tbody>
+                </table>
+                <div id="docLibEmptyState" class="empty-dossier-state" style="display: none;">
+                    <div class="empty-icon"><svg class="lucide-icon icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg></div>
+                    <h3>NO KNOWLEDGE DOCUMENTS IN LIBRARY</h3>
+                    <p>Upload PDF or DOCX enterprise documents to enable semantic vector search and grounding.</p>
+                    <button type="button" class="cat-btn-primary" onclick="triggerDocUploadModal()" style="margin-top: 12px;">+ UPLOAD FIRST DOCUMENT</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Document Chunks Preview Submodal -->
+    <div class="cat-submodal-overlay" id="docChunksModal" style="display: none;">
+        <div class="cat-submodal-box" style="max-width: 850px; max-height: 85vh; display: flex; flex-direction: column;">
+            <div class="cat-submodal-header">
+                <div>
+                    <h3 id="docChunksTitle">DOCUMENT VECTOR CHUNKS</h3>
+                    <span id="docChunksMeta" class="bi-meta-text" style="font-size: 11px;">--</span>
+                </div>
+                <button type="button" class="cat-btn-close" onclick="closeDocChunksModal()"><svg class="lucide-icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            </div>
+            <div class="cat-submodal-body" id="docChunksContent" style="overflow-y: auto; flex: 1; padding: 16px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;">
+                <!-- Injected via JS -->
+            </div>
+            <div class="form-actions">
+                <button type="button" class="cat-btn-cancel" onclick="closeDocChunksModal()">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+<footer class="hud-footer">
         <div class="footer-left">
             <span id="footerRepo">REPOSITORY: ayushrajcodes0407/SARTHI</span>
             <span class="separator">//</span>

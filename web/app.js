@@ -86,7 +86,18 @@ document.addEventListener('DOMContentLoaded', () => {
             toggleVoiceListening();
         } else if (e.key === 'Escape') {
             // Close active modal or active sidebars
-            const modals = ['biModal', 'catalogueModal', 'productFormModal', 'stockAdjustModal', 'productDetailModal', 'spreadsheetMappingModal'];
+            const modals = [
+                'reportPreviewModal',
+                'productDetailModal',
+                'stockAdjustModal',
+                'productFormModal',
+                'spreadsheetMappingModal',
+                'businessReportsModal',
+                'savedDatasetsModal',
+                'documentLibraryModal',
+                'catalogueModal',
+                'biModal'
+            ];
             let modalClosed = false;
             for (const id of modals) {
                 const el = document.getElementById(id);
@@ -111,12 +122,43 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', updateSidebarBackdrop);
 });
 
+let consecutiveStatusFailures = 0;
+
+function handleStatusFailure() {
+    const systemBadge = document.getElementById('systemStatusBadge');
+    const statusText = document.getElementById('statusText');
+    if (systemBadge && statusText) {
+        systemBadge.className = 'status-badge offline';
+        statusText.textContent = 'SYSTEM OFFLINE';
+    }
+    const footerStatusEl = document.getElementById('footerStatus');
+    if (footerStatusEl) {
+        footerStatusEl.textContent = 'STATUS: OFFLINE / DISCONNECTED';
+    }
+    const radarLabel = document.getElementById('radarTelemetryLabel');
+    if (radarLabel) {
+        radarLabel.textContent = 'SYSTEM ENGINE: OFFLINE';
+    }
+}
+
 // Update Telemetry & Status
 async function fetchSystemStatus() {
     try {
-        const res = await fetch('/api/status');
-        if (!res.ok) return;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch('/api/status', { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+            consecutiveStatusFailures++;
+            if (consecutiveStatusFailures >= 3) {
+                handleStatusFailure();
+            }
+            return;
+        }
+
         const data = await res.json();
+        consecutiveStatusFailures = 0;
 
         // Update Date & Time
         const hudDateEl = document.getElementById('hudDate');
@@ -241,20 +283,9 @@ async function fetchSystemStatus() {
         }
 
     } catch (err) {
-        console.warn('Status poll warning:', err);
-        const systemBadge = document.getElementById('systemStatusBadge');
-        const statusText = document.getElementById('statusText');
-        if (systemBadge && statusText) {
-            systemBadge.className = 'status-badge offline';
-            statusText.textContent = 'SYSTEM OFFLINE';
-        }
-        const footerStatusEl = document.getElementById('footerStatus');
-        if (footerStatusEl) {
-            footerStatusEl.textContent = 'STATUS: OFFLINE / DISCONNECTED';
-        }
-        const radarLabel = document.getElementById('radarTelemetryLabel');
-        if (radarLabel) {
-            radarLabel.textContent = 'SYSTEM ENGINE: OFFLINE';
+        consecutiveStatusFailures++;
+        if (consecutiveStatusFailures >= 3) {
+            handleStatusFailure();
         }
     }
 }
@@ -1061,12 +1092,12 @@ async function executeCommand(cmd) {
         } else if (data.action === 'llm_explanation') {
             let followUps = renderFollowUpsHtml(data.follow_ups);
             displayIntelCard('LOCAL AI EXPLANATION', `
-                <div class="source-badge">SOURCE: ${data.source || 'Local AI (qwen3:4b-instruct)'}</div>
+                <div class="source-badge">SOURCE: ${data.source || 'Local AI (gemma4:e2b)'}</div>
                 <div class="llm-explanation-box">
                     ${escapeHtml(data.explanation || data.display)}
                 </div>
                 <div class="llm-meta-tag">
-                    <span>Model: ${escapeHtml(data.model || 'qwen3:4b-instruct')}</span>
+                    <span>Model: ${escapeHtml(data.model || 'gemma4:e2b')}</span>
                     ${data.inference_time_seconds ? `<span>• Latency: ${data.inference_time_seconds}s</span>` : ''}
                     <span>• Local Offline Inference</span>
                 </div>
@@ -1506,64 +1537,215 @@ function displayIntelCard(title, htmlContent) {
 // BUSINESS SHORTCUT ACTION HANDLERS
 // ==========================================
 
-async function openBusinessInsights() {
-    logTerminal('Accessing Business Intelligence & Analytics Dossier...', 'system');
-    
-    // 1. If in-memory report is already present, open BI modal directly
-    if (currentBIReport) {
-        renderBIDashboard(currentBIReport);
-        document.getElementById('biModal').style.display = 'flex';
-        const docName = currentBIReport.file_name || currentBIReport.dataset_name || 'Active Dataset';
-        logTerminal(`[REPORT ENGINE] Intelligence dossier loaded for ${docName}.`, 'jarvis');
-        vantiqSpeak(`Business intelligence dossier loaded for ${docName}.`);
-        return;
-    }
+let currentBIDatasetId = '';
 
-    // 2. Try fetching latest cached/generated report
+async function openBusinessInsights() {
+    logTerminal('Opening Live Business Analytics Dashboard...', 'system');
+    const biModal = document.getElementById('biModal');
+    if (biModal) biModal.style.display = 'flex';
+    await loadBusinessInsights(currentBIDatasetId || '');
+    if (typeof vantiqSpeak === 'function') {
+        vantiqSpeak('Loaded live commercial intelligence analytics.');
+    }
+}
+
+async function loadBusinessInsights(datasetId = '') {
+    currentBIDatasetId = datasetId;
+    let url = '/api/bi/analytics';
+    if (datasetId) {
+        url += `?dataset_id=${encodeURIComponent(datasetId)}`;
+    }
     try {
-        const res = await fetch('/api/generate-report');
+        const res = await fetch(url);
         if (res.ok) {
             const data = await res.json();
-            if (data.success && data.report) {
-                currentBIReport = data.report;
-                renderBIDashboard(currentBIReport);
-                document.getElementById('biModal').style.display = 'flex';
-                logTerminal(`[REPORT ENGINE] Loaded commercial intelligence report for ${data.report.file_name || 'dataset'}.`, 'jarvis');
-                vantiqSpeak('Loaded commercial intelligence dossier.');
+            if (data.success) {
+                renderLiveBIDashboard(data);
                 return;
             }
         }
-    } catch (err) {
-        console.warn('Error fetching BI report:', err);
+    } catch (e) {
+        console.warn('Error loading live BI analytics:', e);
     }
 
-    // 3. Check if saved datasets exist in SQLite to open report
-    try {
-        const dsRes = await fetch('/api/datasets?page_size=1');
-        if (dsRes.ok) {
-            const dsData = await dsRes.json();
-            const items = dsData.items || dsData.datasets || [];
-            if (items.length > 0) {
-                await viewDatasetReport(items[0].id);
-                return;
-            }
+    if (currentBIReport) {
+        renderBIDashboard(currentBIReport);
+    }
+}
+
+function onBIDatasetChange(val) {
+    loadBusinessInsights(val);
+}
+
+function renderLiveBIDashboard(analytics) {
+    const kpi = analytics.kpi_overview || {};
+    const datasets = analytics.available_datasets || [];
+    const activeDs = analytics.active_dataset;
+    const insights = analytics.dataset_insights || {};
+
+    // 1. Header Information
+    const titleElem = document.getElementById('biDocTitle');
+    if (titleElem) {
+        titleElem.textContent = activeDs ? `ANALYTICS: ${activeDs.original_filename}` : 'LIVE COMMERCIAL ANALYTICS & INSIGHTS';
+    }
+    const badge = document.getElementById('biClassificationBadge');
+    if (badge) {
+        badge.textContent = activeDs ? (activeDs.dataset_type || 'DATASET').toUpperCase() : 'LIVE OPERATIONS';
+    }
+    const tsElem = document.getElementById('biDocTimestamp');
+    if (tsElem) {
+        tsElem.textContent = `TELEMETRY: ${new Date().toLocaleTimeString()}`;
+    }
+
+    // 2. Populate Dataset Selector Dropdown
+    const selector = document.getElementById('biDatasetSelect');
+    if (selector && datasets.length > 0) {
+        let optHtml = '<option value="">Live Operations & Active Catalogue</option>';
+        datasets.forEach(ds => {
+            const isSel = (ds.id === currentBIDatasetId) ? 'selected' : '';
+            optHtml += `<option value="${ds.id}" ${isSel}>${ds.original_filename} (${ds.row_count || 0} rows)</option>`;
+        });
+        selector.innerHTML = optHtml;
+    }
+
+    // 3. Top KPI Grid
+    const kpiGrid = document.getElementById('biKpiGrid');
+    if (kpiGrid) {
+        kpiGrid.innerHTML = '';
+        addKpiCard(kpiGrid, 'ACTIVE PRODUCTS', kpi.active_products || 0);
+        addKpiCard(kpiGrid, 'TOTAL STOCK UNITS', (kpi.total_stock_units || 0).toLocaleString());
+        
+        const valNum = kpi.inventory_valuation || 0;
+        const valStr = valNum >= 10000000 ? `₹${(valNum / 10000000).toFixed(2)} Cr` : `₹${valNum.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+        addKpiCard(kpiGrid, 'INVENTORY VALUATION', valStr);
+        
+        addKpiCard(kpiGrid, 'TOTAL SUPPLIERS', kpi.total_suppliers || 0);
+        addKpiCard(kpiGrid, 'LOW STOCK ALERTS', kpi.low_stock_count || 0);
+        addKpiCard(kpiGrid, 'ACTIVE DATASETS', kpi.total_datasets || 0);
+    }
+
+    // 4. Render Active Tab Content
+    const currentTab = activeBITab || 'overview';
+    renderLiveBITabContent(currentTab, analytics);
+}
+
+function renderLiveBITabContent(tab, analytics) {
+    const panes = document.querySelectorAll('.bi-tab-pane');
+    panes.forEach(p => p.classList.remove('active'));
+
+    let pane = document.getElementById(`biPane_${tab}`);
+    if (!pane) {
+        // Fallback to overview pane
+        pane = document.getElementById('biPane_overview');
+    }
+    if (!pane) return;
+    pane.classList.add('active');
+
+    const kpi = analytics.kpi_overview || {};
+    const pricing = analytics.pricing || {};
+    const suppliers = analytics.suppliers || {};
+    const insights = analytics.dataset_insights || {};
+
+    if (tab === 'overview') {
+        let html = `
+            <div class="bi-section-header">
+                <h3>COMMERCIAL OPERATIONS OVERVIEW</h3>
+                <span class="bi-tag cyan">REAL-TIME</span>
+            </div>
+            <div class="bi-card-grid">
+                <div class="bi-card">
+                    <h4>INVENTORY HEALTH & VALUATION</h4>
+                    <div class="data-row"><span class="label">Active SKUs:</span><span class="val cyan">${kpi.active_products || 0}</span></div>
+                    <div class="data-row"><span class="label">Stock Units:</span><span class="val">${(kpi.total_stock_units || 0).toLocaleString()}</span></div>
+                    <div class="data-row"><span class="label">Low Stock Alerts:</span><span class="val ${kpi.low_stock_count > 0 ? 'amber' : 'green'}">${kpi.low_stock_count || 0}</span></div>
+                    <div class="data-row"><span class="label">Out of Stock:</span><span class="val ${kpi.out_of_stock_count > 0 ? 'crimson' : 'green'}">${kpi.out_of_stock_count || 0}</span></div>
+                </div>
+                <div class="bi-card">
+                    <h4>PRICING & PROFITABILITY</h4>
+                    <div class="data-row"><span class="label">Priced Items:</span><span class="val">${pricing.items_analyzed || 0}</span></div>
+                    <div class="data-row"><span class="label">Unpriced Items:</span><span class="val ${kpi.unpriced_count > 0 ? 'amber' : 'green'}">${kpi.unpriced_count || 0}</span></div>
+                    <div class="data-row"><span class="label">Margin Profiles:</span><span class="val cyan">${(pricing.margins || []).length} computed</span></div>
+                </div>
+                <div class="bi-card">
+                    <h4>SUPPLY CHAIN & LOGISTICS</h4>
+                    <div class="data-row"><span class="label">Active Suppliers:</span><span class="val">${kpi.total_suppliers || 0}</span></div>
+                    <div class="data-row"><span class="label">Procurement Records:</span><span class="val">${suppliers.count || 0}</span></div>
+                    <div class="data-row"><span class="label">Ingested Datasets:</span><span class="val">${kpi.total_datasets || 0}</span></div>
+                </div>
+            </div>
+        `;
+        if (insights.sales && insights.sales.total_revenue) {
+            html += `
+                <div class="bi-section-header" style="margin-top: 20px;">
+                    <h3>DATASET REVENUE STREAM</h3>
+                    <span class="bi-tag gold">DATASET INSIGHTS</span>
+                </div>
+                <div class="bi-card-grid">
+                    <div class="bi-card">
+                        <h4>REVENUE SUMMARY</h4>
+                        <div class="data-row"><span class="label">Total Revenue:</span><span class="val gold">₹${(insights.sales.total_revenue || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></div>
+                        <div class="data-row"><span class="label">Units Sold:</span><span class="val">${(insights.sales.total_units_sold || 0).toLocaleString()}</span></div>
+                        <div class="data-row"><span class="label">Transactions:</span><span class="val">${insights.sales.total_transactions || 0}</span></div>
+                    </div>
+                </div>
+            `;
         }
-    } catch (err) {
-        console.warn('Error querying datasets:', err);
+        pane.innerHTML = html;
+    } else if (tab === 'pricing') {
+        const margins = pricing.margins || [];
+        let rows = '';
+        margins.forEach(m => {
+            const costStr = m.purchase_cost != null ? `₹${m.purchase_cost.toFixed(2)}` : '--';
+            const priceStr = m.selling_price != null ? `₹${m.selling_price.toFixed(2)}` : '--';
+            const marginStr = m.margin_pct != null ? `${m.margin_pct.toFixed(1)}%` : '--';
+            rows += `<tr><td>${m.product_name}</td><td>${costStr}</td><td>${priceStr}</td><td><span class="tbl-badge success">${marginStr}</span></td></tr>`;
+        });
+        pane.innerHTML = `
+            <div class="bi-section-header"><h3>PRICING & MARGIN PROFILE</h3></div>
+            <table class="cat-table">
+                <thead><tr><th>PRODUCT</th><th>PURCHASE COST</th><th>SELLING PRICE</th><th>MARGIN %</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="4" style="text-align:center;">No margin data calculated.</td></tr>'}</tbody>
+            </table>
+        `;
+    } else if (tab === 'inventory') {
+        pane.innerHTML = `
+            <div class="bi-section-header"><h3>LIVE INVENTORY BALANCES & STOCK TELEMETRY</h3></div>
+            <div class="bi-card-grid">
+                <div class="bi-card">
+                    <h4>STOCK STATUS</h4>
+                    <div class="data-row"><span class="label">Total Stock Units:</span><span class="val">${(kpi.total_stock_units || 0).toLocaleString()}</span></div>
+                    <div class="data-row"><span class="label">Low Stock Warnings:</span><span class="val ${kpi.low_stock_count > 0 ? 'amber' : 'green'}">${kpi.low_stock_count || 0}</span></div>
+                    <div class="data-row"><span class="label">Out of Stock:</span><span class="val ${kpi.out_of_stock_count > 0 ? 'crimson' : 'green'}">${kpi.out_of_stock_count || 0}</span></div>
+                </div>
+            </div>
+        `;
+    } else if (tab === 'sales') {
+        const sales = insights.sales || {};
+        pane.innerHTML = `
+            <div class="bi-section-header"><h3>REVENUE & SALES PERFORMANCE</h3></div>
+            <div class="bi-card-grid">
+                <div class="bi-card">
+                    <h4>SALES REVENUE</h4>
+                    <div class="data-row"><span class="label">Total Gross Sales:</span><span class="val gold">₹${(sales.total_revenue || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></div>
+                    <div class="data-row"><span class="label">Transactions Recorded:</span><span class="val">${sales.total_transactions || 0}</span></div>
+                    <div class="data-row"><span class="label">Units Sold:</span><span class="val">${(sales.total_units_sold || 0).toLocaleString()}</span></div>
+                </div>
+            </div>
+        `;
+    } else if (tab === 'suppliers') {
+        pane.innerHTML = `
+            <div class="bi-section-header"><h3>SUPPLY CHAIN & VENDOR RELATIONS</h3></div>
+            <div class="bi-card-grid">
+                <div class="bi-card">
+                    <h4>VENDOR METRICS</h4>
+                    <div class="data-row"><span class="label">Total Registered Suppliers:</span><span class="val cyan">${kpi.total_suppliers || 0}</span></div>
+                    <div class="data-row"><span class="label">Procurement Orders:</span><span class="val">${suppliers.count || 0}</span></div>
+                </div>
+            </div>
+        `;
+    } else {
+        pane.innerHTML = `<div class="bi-section-header"><h3>${tab.toUpperCase()}</h3></div><p>Detailed ${tab} analytics live matrix stream.</p>`;
     }
-
-    // 4. Truthful fallback: No active dataset or report
-    const html = `
-        <div class="data-row"><span class="label">BI ENGINE:</span><span class="val cyan">STANDBY</span></div>
-        <div class="data-row"><span class="label">DATASET:</span><span class="val amber">NO REPORT LOADED</span></div>
-        <p style="color: var(--text-muted); font-size: 0.84rem; line-height: 1.4; margin-top: 8px;">
-            Import an Excel spreadsheet or PDF document via the Business Data Import module below to generate executive KPI analytics, margin breakdowns, and data quality audits.
-        </p>
-        <button type="button" class="cat-btn-primary" style="margin-top: 10px; width: 100%;" onclick="document.getElementById('businessFileInput').click()"><svg class="btn-svg-icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path></svg> SELECT FILE TO ANALYZE</button>
-    `;
-    displayIntelCard('BUSINESS INTELLIGENCE', html);
-    logTerminal('[BI NOTICE] No active business report. Please import an Excel or PDF dataset.', 'system');
-    vantiqSpeak('No business report is currently active. Please import a dataset to generate intelligence.');
 }
 
 async function openSuppliersPurchases() {
@@ -1674,7 +1856,7 @@ async function showSystemStatus() {
             </div>
             <div class="data-row">
                 <span class="label">LOCAL AI (OLLAMA):</span>
-                <span class="val" style="color: ${statusColor(llmSub.status)};">${(llmSub.status || 'OFFLINE').toUpperCase()} (${llmSub.model || 'qwen3:4b-instruct'})</span>
+                <span class="val" style="color: ${statusColor(llmSub.status)};">${(llmSub.status || 'OFFLINE').toUpperCase()} (${llmSub.model || 'gemma4:e2b'})</span>
             </div>
             <div class="data-row">
                 <span class="label">DOCUMENT RAG:</span>
@@ -1701,73 +1883,640 @@ async function showSystemStatus() {
     }
 }
 
-async function openDocumentLibrary() {
-    toggleRightSidebar(true);
-    logTerminal('Synchronizing and opening Document & Dataset Library...', 'system');
-    
-    // 1. Refresh library datasets
-    await loadSavedDatasets(1);
+// ==============================================================
+// SARTHI DEDICATED DESTINATIONS: REPORTS, DATASETS, DOCS MODULES
+// ==============================================================
 
-    // 2. Fetch RAG indexed documents status
-    let ragDocs = [];
-    try {
-        const ragRes = await fetch('/api/rag/documents');
-        if (ragRes.ok) {
-            const ragData = await ragRes.json();
-            ragDocs = ragData.documents || [];
-        }
-    } catch (e) {
-        console.warn('Error fetching RAG docs:', e);
+// --------------------------------------------------
+// 1. BUSINESS REPORTS DESTINATION
+// --------------------------------------------------
+let reportsCache = [];
+let reportsSearchQuery = '';
+let reportsFilterType = '';
+
+function openBusinessReports() {
+    logTerminal('Accessing Business Reports Archive & Generator...', 'system');
+    const modal = document.getElementById('businessReportsModal');
+    if (modal) modal.style.display = 'flex';
+    loadBusinessReports();
+    if (typeof vantiqSpeak === 'function') {
+        vantiqSpeak('Business reports archive loaded.');
     }
-
-    // 3. Scroll to Library module with highlight pulse
-    const libBox = document.getElementById('libraryModuleBox');
-    if (libBox) {
-        libBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        libBox.style.boxShadow = '0 0 16px var(--cyan)';
-        setTimeout(() => {
-            libBox.style.boxShadow = '';
-        }, 1500);
-    }
-
-    // 4. Render summary card in viewport
-    let html = `
-        <div class="data-row"><span class="label">SAVED DATASETS:</span><span class="val cyan" id="intelLibCount">Loading...</span></div>
-        <div class="data-row"><span class="label">RAG INDEXED DOCS:</span><span class="val">${ragDocs.length}</span></div>
-    `;
-
-    if (ragDocs.length > 0) {
-        html += `<div style="max-height: 120px; overflow-y: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;">`;
-        ragDocs.forEach(d => {
-            html += `<div style="padding: 4px 6px; background: rgba(0,240,255,0.04); border-left: 2px solid var(--cyan); font-size: 0.8rem; display: flex; justify-content: space-between;">
-                <span style="color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;">${escapeHtml(d.original_filename)}</span>
-                <span style="color: var(--cyan); font-size: 0.74rem;">${d.chunk_count || 0} chunks</span>
-            </div>`;
-        });
-        html += `</div>`;
-    }
-
-    html += `<p style="color: var(--text-muted); font-size: 0.78rem; margin-top: 8px;">
-        Use the Saved Data Library below to search datasets, view BI reports, or re-index documents for local RAG intelligence.
-    </p>`;
-
-    displayIntelCard('DOCUMENT & DATASET LIBRARY', html);
-
-    // Update count once library renders
-    const badge = document.getElementById('libraryCountBadge');
-    const intelCount = document.getElementById('intelLibCount');
-    if (badge && intelCount) {
-        intelCount.textContent = badge.textContent || '0';
-    }
-
-    logTerminal(`[DOCUMENT LIBRARY] Loaded saved datasets and ${ragDocs.length} indexed RAG documents.`, 'jarvis');
-    vantiqSpeak('Document and dataset library loaded.');
 }
 
+function closeBusinessReports() {
+    const modal = document.getElementById('businessReportsModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function loadBusinessReports() {
+    const tbody = document.getElementById('businessReportsTbody');
+    const emptyState = document.getElementById('businessReportsEmptyState');
+    const countBadge = document.getElementById('reportsCountBadge');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color: var(--cyan);">Scanning reports archive...</td></tr>';
+    if (emptyState) emptyState.style.display = 'none';
+
+    try {
+        let url = '/api/reports?page=1&page_size=50';
+        if (reportsSearchQuery) url += `&search=${encodeURIComponent(reportsSearchQuery)}`;
+        if (reportsFilterType) url += `&report_type=${encodeURIComponent(reportsFilterType)}`;
+
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            const items = data.items || [];
+            reportsCache = items;
+            if (countBadge) countBadge.textContent = `${items.length} REPORTS ARCHIVED`;
+
+            if (items.length === 0) {
+                tbody.innerHTML = '';
+                if (emptyState) emptyState.style.display = 'flex';
+                return;
+            }
+
+            let rows = '';
+            items.forEach(r => {
+                const dateStr = r.created_at ? new Date(r.created_at).toLocaleString() : '--';
+                const repType = (r.report_type || 'full_bi').toUpperCase();
+                const repFormat = (r.report_format || 'json').toUpperCase();
+                const statusBadge = (r.analysis_status === 'success' || !r.analysis_status) ? 
+                    '<span class="tbl-badge verified">VERIFIED</span>' : 
+                    '<span class="tbl-badge warning">PENDING</span>';
+
+                rows += `
+                    <tr>
+                        <td style="font-family: var(--font-mono); color: var(--cyan);">${escapeHtml(r.report_id || '--')}</td>
+                        <td><strong>Commercial Dossier</strong><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(r.original_filename || r.dataset_id || 'Enterprise Model')}</span></td>
+                        <td><span class="tbl-badge cyan">${repType}</span></td>
+                        <td>${escapeHtml(r.original_filename || r.dataset_id || '--')}</td>
+                        <td style="font-size: 11px; font-family: var(--font-mono);">${dateStr}</td>
+                        <td><span class="tbl-badge gold">${repFormat}</span></td>
+                        <td>${statusBadge}</td>
+                        <td style="text-align: right;">
+                            <div class="cat-actions-group" style="justify-content: flex-end;">
+                                <button type="button" class="tbl-btn" onclick="previewReport('${r.report_id}')" title="Preview Dossier">PREVIEW</button>
+                                <button type="button" class="tbl-btn" onclick="window.location.href='/api/export-report?format=html&report_id=${r.report_id}'" title="Download HTML">HTML</button>
+                                <button type="button" class="tbl-btn" onclick="window.location.href='/api/export-report?format=csv&report_id=${r.report_id}'" title="Download CSV">CSV</button>
+                                <button type="button" class="tbl-btn" onclick="window.location.href='/api/export-report?format=json&report_id=${r.report_id}'" title="Download JSON">JSON</button>
+                                <button type="button" class="tbl-btn deactivate" onclick="deleteReportItem('${r.report_id}')" title="Delete Report">DEL</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = rows;
+            return;
+        }
+    } catch (e) {
+        console.warn('Error loading business reports:', e);
+    }
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color: #ff4b4b;">Failed to load reports archive.</td></tr>';
+}
+
+function onReportsSearch(val) {
+    reportsSearchQuery = (val || '').trim();
+    loadBusinessReports();
+}
+
+function onReportsFilterChange() {
+    const filter = document.getElementById('reportTypeFilter');
+    reportsFilterType = filter ? filter.value : '';
+    loadBusinessReports();
+}
+
+async function generateNewReportFromModal() {
+    const btn = document.getElementById('btnGenerateReportModal');
+    const oldText = btn ? btn.innerHTML : '+ GENERATE NEW REPORT';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-loading-dot"></span> GENERATING...';
+    }
+    logTerminal('Compiling comprehensive business report dossier...', 'system');
+
+    try {
+        const res = await fetch('/api/generate-report', { method: 'POST' });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+                logTerminal('[REPORT ENGINE] New commercial report artifact generated successfully.', 'jarvis');
+                if (typeof vantiqSpeak === 'function') vantiqSpeak('New commercial report generated successfully.');
+                await loadBusinessReports();
+            }
+        } else {
+            logTerminal('[REPORT ERROR] Report compilation returned non-200 status.', 'system');
+        }
+    } catch (e) {
+        console.error('Error generating report:', e);
+        logTerminal(`[REPORT ERROR] Exception during generation: ${e.message}`, 'system');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldText;
+        }
+    }
+}
+
+async function previewReport(reportId) {
+    const previewModal = document.getElementById('reportPreviewModal');
+    const titleElem = document.getElementById('reportPreviewTitle');
+    const metaElem = document.getElementById('reportPreviewMeta');
+    const bodyElem = document.getElementById('reportPreviewContent');
+    const btnHtml = document.getElementById('previewExportHtml');
+    const btnCsv = document.getElementById('previewExportCsv');
+    const btnJson = document.getElementById('previewExportJson');
+
+    if (!previewModal) return;
+    previewModal.style.display = 'flex';
+    if (bodyElem) bodyElem.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--cyan);">Loading report artifact...</div>';
+
+    if (btnHtml) btnHtml.onclick = () => window.location.href = `/api/export-report?format=html&report_id=${reportId}`;
+    if (btnCsv) btnCsv.onclick = () => window.location.href = `/api/export-report?format=csv&report_id=${reportId}`;
+    if (btnJson) btnJson.onclick = () => window.location.href = `/api/export-report?format=json&report_id=${reportId}`;
+
+    try {
+        const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}`);
+        if (res.ok) {
+            const data = await res.json();
+            const rep = data.report || {};
+            const content = rep.content || rep;
+            
+            if (titleElem) titleElem.textContent = `DOSSIER: ${rep.original_filename || rep.report_id || 'BUSINESS REPORT'}`;
+            if (metaElem) metaElem.textContent = `ID: ${rep.report_id} | GENERATED: ${rep.created_at || 'Recently'} | TYPE: ${(rep.report_type || 'full_bi').toUpperCase()}`;
+
+            let kpiHtml = '';
+            if (content.kpi_summary) {
+                const k = content.kpi_summary;
+                kpiHtml = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 20px;">
+                        <div style="background: rgba(0,243,255,0.06); border: 1px solid rgba(0,243,255,0.2); padding: 10px; border-radius: 4px;">
+                            <div style="font-size: 10px; color: var(--text-muted);">ACTIVE PRODUCTS</div>
+                            <div style="font-size: 18px; color: var(--cyan); font-weight: 700;">${k.active_products || 0}</div>
+                        </div>
+                        <div style="background: rgba(0,243,255,0.06); border: 1px solid rgba(0,243,255,0.2); padding: 10px; border-radius: 4px;">
+                            <div style="font-size: 10px; color: var(--text-muted);">STOCK UNITS</div>
+                            <div style="font-size: 18px; color: #fff; font-weight: 700;">${(k.total_stock_units || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: rgba(212,175,55,0.06); border: 1px solid rgba(212,175,55,0.2); padding: 10px; border-radius: 4px;">
+                            <div style="font-size: 10px; color: var(--gold-champagne);">INVENTORY VALUATION</div>
+                            <div style="font-size: 18px; color: var(--gold-champagne); font-weight: 700;">₹${((k.inventory_valuation || 0) >= 10000000 ? ((k.inventory_valuation || 0)/10000000).toFixed(2) + ' Cr' : (k.inventory_valuation || 0).toLocaleString())}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            let sectionsHtml = '';
+            if (content.overview) {
+                sectionsHtml += `<div style="margin-bottom: 16px;"><h4 style="color: var(--gold-champagne); margin-bottom: 6px;">EXECUTIVE OVERVIEW</h4><p style="color: #cbd5e1; line-height: 1.6;">${escapeHtml(typeof content.overview === 'string' ? content.overview : JSON.stringify(content.overview, null, 2))}</p></div>`;
+            }
+            if (content.sales) {
+                sectionsHtml += `<div style="margin-bottom: 16px;"><h4 style="color: var(--gold-champagne); margin-bottom: 6px;">SALES PERFORMANCE</h4><pre style="background: rgba(6,11,20,0.8); padding: 10px; border-radius: 4px; overflow-x: auto; color: var(--cyan);">${escapeHtml(JSON.stringify(content.sales, null, 2))}</pre></div>`;
+            }
+            if (content.inventory) {
+                sectionsHtml += `<div style="margin-bottom: 16px;"><h4 style="color: var(--gold-champagne); margin-bottom: 6px;">INVENTORY POSITION</h4><pre style="background: rgba(6,11,20,0.8); padding: 10px; border-radius: 4px; overflow-x: auto; color: var(--cyan);">${escapeHtml(JSON.stringify(content.inventory, null, 2))}</pre></div>`;
+            }
+
+            if (bodyElem) {
+                bodyElem.innerHTML = `
+                    ${kpiHtml}
+                    ${sectionsHtml || `<pre style="white-space: pre-wrap; color: #cbd5e1;">${escapeHtml(JSON.stringify(content, null, 2))}</pre>`}
+                `;
+            }
+            return;
+        }
+    } catch (e) {
+        console.error('Error previewing report:', e);
+    }
+    if (bodyElem) bodyElem.innerHTML = '<div style="color: #ff4b4b; text-align: center; padding: 20px;">Failed to load report preview content.</div>';
+}
+
+function closeReportPreview() {
+    const previewModal = document.getElementById('reportPreviewModal');
+    if (previewModal) previewModal.style.display = 'none';
+}
+
+async function deleteReportItem(reportId) {
+    if (!confirm(`Are you sure you want to delete report '${reportId}'? This action cannot be undone.`)) return;
+    try {
+        const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
+        if (res.ok) {
+            logTerminal(`[REPORT ENGINE] Deleted report ${reportId}.`, 'system');
+            await loadBusinessReports();
+        }
+    } catch (e) {
+        console.error('Error deleting report:', e);
+    }
+}
+
+// --------------------------------------------------
+// 2. SAVED DATASETS DESTINATION
+// --------------------------------------------------
+let savedDsSearch = '';
+let savedDsFormat = '';
+
+function openSavedDatasets() {
+    logTerminal('Opening Structured Dataset Repository...', 'system');
+    const modal = document.getElementById('savedDatasetsModal');
+    if (modal) modal.style.display = 'flex';
+    loadSavedDatasetsModal();
+    if (typeof vantiqSpeak === 'function') {
+        vantiqSpeak('Structured dataset repository loaded.');
+    }
+}
+
+function closeSavedDatasets() {
+    const modal = document.getElementById('savedDatasetsModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function loadSavedDatasetsModal() {
+    const tbody = document.getElementById('savedDatasetsTbody');
+    const emptyState = document.getElementById('savedDatasetsEmptyState');
+    const badge = document.getElementById('savedDatasetsCountBadge');
+    const kpiTotal = document.getElementById('dsKpiTotal');
+    const kpiRows = document.getElementById('dsKpiRows');
+    const kpiCols = document.getElementById('dsKpiCols');
+
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color: var(--cyan);">Scanning structured datasets...</td></tr>';
+    if (emptyState) emptyState.style.display = 'none';
+
+    try {
+        let url = '/api/datasets?page=1&page_size=50';
+        if (savedDsSearch) url += `&search=${encodeURIComponent(savedDsSearch)}`;
+        if (savedDsFormat) url += `&file_type=${encodeURIComponent(savedDsFormat)}`;
+
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            const items = data.items || data.datasets || [];
+            if (badge) badge.textContent = `${items.length} DATASETS`;
+
+            let totalRows = 0;
+            let totalCols = 0;
+            items.forEach(d => {
+                totalRows += (d.row_count || 0);
+                totalCols = Math.max(totalCols, (d.column_count || 0));
+            });
+
+            if (kpiTotal) kpiTotal.textContent = items.length;
+            if (kpiRows) kpiRows.textContent = totalRows.toLocaleString();
+            if (kpiCols) kpiCols.textContent = totalCols.toLocaleString();
+
+            if (items.length === 0) {
+                tbody.innerHTML = '';
+                if (emptyState) emptyState.style.display = 'flex';
+                return;
+            }
+
+            let rows = '';
+            items.forEach(d => {
+                const ext = (d.file_type || 'csv').toUpperCase();
+                const ingestedAt = d.created_at ? new Date(d.created_at).toLocaleString() : '--';
+                const rowsCnt = (d.row_count || 0).toLocaleString();
+                const colsCnt = (d.column_count || 0).toLocaleString();
+                const typeStr = d.dataset_type || 'Tabular Data';
+
+                rows += `
+                    <tr>
+                        <td style="font-family: var(--font-mono); color: var(--cyan);">${escapeHtml(d.id)}</td>
+                        <td><strong>${escapeHtml(d.original_filename)}</strong></td>
+                        <td><span class="tbl-badge format">${ext}</span></td>
+                        <td>${rowsCnt}</td>
+                        <td>${colsCnt}</td>
+                        <td style="font-size: 11px; color: var(--text-muted);">${escapeHtml(typeStr)}</td>
+                        <td style="font-size: 11px; font-family: var(--font-mono);">${ingestedAt}</td>
+                        <td style="text-align: right;">
+                            <div class="cat-actions-group" style="justify-content: flex-end;">
+                                <button type="button" class="tbl-btn" onclick="openBIForDataset('${d.id}')" title="Analyze in BI Dashboard">ANALYZE IN BI</button>
+                                <button type="button" class="tbl-btn adjust" onclick="launchMappingForDataset('${d.id}')" title="Synchronize with Catalogue">MAP CATALOGUE</button>
+                                <button type="button" class="tbl-btn" onclick="previewDatasetRaw('${d.id}', '${escapeHtml(d.original_filename)}')" title="Preview Raw Records">RAW PREVIEW</button>
+                                <button type="button" class="tbl-btn deactivate" onclick="deleteSavedDatasetFromModal('${d.id}')" title="Delete Dataset">DEL</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = rows;
+            return;
+        }
+    } catch (e) {
+        console.warn('Error loading datasets modal:', e);
+    }
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color: #ff4b4b;">Failed to load datasets.</td></tr>';
+}
+
+function onSavedDatasetsSearch(val) {
+    savedDsSearch = (val || '').trim();
+    loadSavedDatasetsModal();
+}
+
+function onSavedDatasetsFilterChange() {
+    const sel = document.getElementById('savedDatasetsFormatFilter');
+    savedDsFormat = sel ? sel.value : '';
+    loadSavedDatasetsModal();
+}
+
+function triggerDatasetUploadModal() {
+    const fileInput = document.getElementById('businessFileInput');
+    if (fileInput) fileInput.click();
+}
+
+function openBIForDataset(datasetId) {
+    closeSavedDatasets();
+    const biSelect = document.getElementById('biDatasetSelect');
+    if (biSelect) biSelect.value = datasetId;
+    loadBusinessInsights(datasetId);
+    const biModal = document.getElementById('biModal');
+    if (biModal) biModal.style.display = 'flex';
+}
+
+function launchMappingForDataset(datasetId) {
+    closeSavedDatasets();
+    if (typeof openSpreadsheetMappingModal === 'function') {
+        openSpreadsheetMappingModal(datasetId);
+    }
+}
+
+async function previewDatasetRaw(datasetId, filename) {
+    logTerminal(`[RAW PREVIEW] Fetching raw records matrix for ${filename || datasetId}...`, 'system');
+    try {
+        const res = await fetch(`/api/datasets/${encodeURIComponent(datasetId)}/data?limit=50`);
+        if (res.ok) {
+            const data = await res.json();
+            const rows = data.records || data.data || [];
+            if (rows.length === 0) {
+                alert(`No tabular rows found in dataset ${filename}.`);
+                return;
+            }
+            // Open BI modal on raw matrix tab
+            closeSavedDatasets();
+            const biModal = document.getElementById('biModal');
+            if (biModal) biModal.style.display = 'flex';
+            if (typeof switchBITab === 'function') switchBITab('raw');
+            return;
+        }
+    } catch (e) {
+        console.error('Error fetching raw preview:', e);
+    }
+    alert(`Could not fetch raw matrix for ${filename}.`);
+}
+
+async function deleteSavedDatasetFromModal(datasetId) {
+    if (!confirm(`Are you sure you want to delete dataset '${datasetId}'? Associated catalogue mappings will be retained.`)) return;
+    try {
+        const res = await fetch(`/api/datasets/${encodeURIComponent(datasetId)}`, { method: 'DELETE' });
+        if (res.ok) {
+            logTerminal(`[DATASET REPOSITORY] Deleted dataset ${datasetId}.`, 'system');
+            await loadSavedDatasetsModal();
+        }
+    } catch (e) {
+        console.error('Error deleting dataset:', e);
+    }
+}
+
+// --------------------------------------------------
+// 3. DOCUMENT LIBRARY DESTINATION
+// --------------------------------------------------
+function openDocumentLibrary() {
+    logTerminal('Accessing Enterprise Document & Knowledge Library...', 'system');
+    const modal = document.getElementById('documentLibraryModal');
+    if (modal) modal.style.display = 'flex';
+    loadDocumentLibraryModal();
+    if (typeof vantiqSpeak === 'function') {
+        vantiqSpeak('Document and knowledge library loaded.');
+    }
+}
+
+function closeDocumentLibrary() {
+    const modal = document.getElementById('documentLibraryModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function loadDocumentLibraryModal() {
+    const tbody = document.getElementById('docLibTbody');
+    const emptyState = document.getElementById('docLibEmptyState');
+    const countBadge = document.getElementById('docLibCountBadge');
+    const providerBadge = document.getElementById('docLibProviderBadge');
+    const kpiTotal = document.getElementById('docKpiTotal');
+    const kpiChunks = document.getElementById('docKpiChunks');
+
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 20px; color: var(--cyan);">Querying RAG knowledge base & document index...</td></tr>';
+    if (emptyState) emptyState.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/document-library');
+        if (res.ok) {
+            const data = await res.json();
+            const docs = data.documents || [];
+            
+            if (countBadge) countBadge.textContent = `${data.indexed_count || docs.length} DOCUMENTS INDEXED`;
+            if (providerBadge) providerBadge.textContent = `EMBEDDINGS: ${(data.embedding_provider || 'sklearn_tfidf_cosine').toUpperCase()}`;
+            if (kpiTotal) kpiTotal.textContent = docs.length;
+            if (kpiChunks) kpiChunks.textContent = (data.total_chunks || 0).toLocaleString();
+
+            if (docs.length === 0) {
+                tbody.innerHTML = '';
+                if (emptyState) emptyState.style.display = 'flex';
+                return;
+            }
+
+            let rows = '';
+            docs.forEach(doc => {
+                const ext = (doc.file_type || 'pdf').toUpperCase();
+                const sizeKb = doc.size_bytes ? `${(doc.size_bytes / 1024).toFixed(1)} KB` : '--';
+                const chunksCnt = doc.chunk_count != null ? doc.chunk_count : 0;
+                const statusBadge = (doc.status === 'indexed') ? 
+                    '<span class="tbl-badge indexed">INDEXED</span>' : 
+                    '<span class="tbl-badge unindexed">UNINDEXED</span>';
+                const ingestedAt = doc.indexed_at ? new Date(doc.indexed_at).toLocaleString() : '--';
+
+                rows += `
+                    <tr>
+                        <td><strong>${escapeHtml(doc.name || doc.id)}</strong></td>
+                        <td><span class="tbl-badge format">${ext}</span></td>
+                        <td style="font-family: var(--font-mono); font-size: 11px;">${sizeKb}</td>
+                        <td style="color: var(--cyan); font-weight: 700;">${chunksCnt}</td>
+                        <td>${statusBadge}</td>
+                        <td style="font-size: 11px; font-family: var(--font-mono);">${ingestedAt}</td>
+                        <td style="text-align: right;">
+                            <div class="cat-actions-group" style="justify-content: flex-end;">
+                                <button type="button" class="tbl-btn" onclick="previewDocChunks('${doc.id}', '${escapeHtml(doc.name || doc.id)}')" title="Preview RAG Chunks">VIEW CHUNKS</button>
+                                <button type="button" class="tbl-btn adjust" onclick="reindexDocItem('${doc.id}')" title="Force Re-Indexing">RE-INDEX</button>
+                                <button type="button" class="tbl-btn deactivate" onclick="deleteDocItem('${doc.id}')" title="Delete Document">DEL</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = rows;
+            return;
+        }
+    } catch (e) {
+        console.warn('Error loading document library:', e);
+    }
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 20px; color: #ff4b4b;">Failed to load document knowledge library.</td></tr>';
+}
+
+function triggerDocUploadModal() {
+    const fileInput = document.getElementById('businessFileInput');
+    if (fileInput) fileInput.click();
+}
+
+async function previewDocChunks(datasetId, docName) {
+    const modal = document.getElementById('docChunksModal');
+    const title = document.getElementById('docChunksTitle');
+    const meta = document.getElementById('docChunksMeta');
+    const content = document.getElementById('docChunksContent');
+
+    if (!modal) return;
+    modal.style.display = 'flex';
+    if (title) title.textContent = `CHUNKS: ${docName}`;
+    if (meta) meta.textContent = `DATASET ID: ${datasetId}`;
+    if (content) content.innerHTML = '<div style="text-align:center; padding: 30px; color: var(--cyan);">Loading vector chunks telemetry...</div>';
+
+    try {
+        const res = await fetch(`/api/rag/documents/${encodeURIComponent(datasetId)}/chunks`);
+        if (res.ok) {
+            const data = await res.json();
+            const chunks = data.chunks || [];
+            if (chunks.length === 0) {
+                if (content) content.innerHTML = '<div style="text-align:center; padding: 30px; color: var(--text-muted);">No chunks indexed for this document.</div>';
+                return;
+            }
+
+            let cards = '';
+            chunks.forEach((c, idx) => {
+                const len = c.char_count || (c.chunk_text ? c.chunk_text.length : 0);
+                const sheet = c.sheet_name ? ` | Sheet: ${c.sheet_name}` : '';
+                cards += `
+                    <div class="chunk-card">
+                        <div class="chunk-header">
+                            <span>CHUNK #${c.chunk_index != null ? c.chunk_index : idx} ${sheet}</span>
+                            <span>${len} CHARS</span>
+                        </div>
+                        <div class="chunk-body">${escapeHtml(c.chunk_text || '')}</div>
+                    </div>
+                `;
+            });
+            if (content) content.innerHTML = cards;
+            return;
+        }
+    } catch (e) {
+        console.error('Error fetching doc chunks:', e);
+    }
+    if (content) content.innerHTML = '<div style="color: #ff4b4b; text-align: center; padding: 20px;">Failed to load vector chunks.</div>';
+}
+
+function closeDocChunksModal() {
+    const modal = document.getElementById('docChunksModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function reindexDocItem(datasetId) {
+    logTerminal(`[RAG ENGINE] Re-indexing document ${datasetId}...`, 'system');
+    try {
+        const res = await fetch(`/api/rag/documents/${encodeURIComponent(datasetId)}/reindex`, { method: 'POST' });
+        if (res.ok) {
+            logTerminal(`[RAG ENGINE] Successfully re-indexed ${datasetId}.`, 'jarvis');
+            await loadDocumentLibraryModal();
+        } else {
+            logTerminal(`[RAG ERROR] Re-indexing returned status ${res.status}.`, 'system');
+        }
+    } catch (e) {
+        console.error('Error re-indexing document:', e);
+    }
+}
+
+async function deleteDocItem(datasetId) {
+    if (!confirm(`Are you sure you want to remove document '${datasetId}' from the knowledge base?`)) return;
+    try {
+        const res = await fetch(`/api/datasets/${encodeURIComponent(datasetId)}`, { method: 'DELETE' });
+        if (res.ok) {
+            logTerminal(`[RAG ENGINE] Removed ${datasetId} from knowledge library.`, 'system');
+            await loadDocumentLibraryModal();
+        }
+    } catch (e) {
+        console.error('Error removing document:', e);
+    }
+}
+
+async function testRagRetrieval() {
+    const input = document.getElementById('ragTestInput');
+    const container = document.getElementById('ragTestResults');
+    const query = input ? input.value.trim() : '';
+
+    if (!query) return;
+    if (container) {
+        container.style.display = 'block';
+        container.innerHTML = '<div style="color: var(--cyan); font-size: 11px;">Searching vector knowledge embeddings...</div>';
+    }
+
+    try {
+        const res = await fetch('/api/rag/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            const answer = data.answer || 'No direct synthesis produced.';
+            const citation = data.citation ? `<div style="font-size: 10px; color: var(--gold-champagne); margin-top: 6px;">CITATION: ${escapeHtml(data.citation)}</div>` : '';
+            const conf = data.confidence ? `<span class="tbl-badge success" style="float: right;">${Math.round(data.confidence * 100)}% MATCH</span>` : '';
+
+            if (container) {
+                container.innerHTML = `
+                    <div style="margin-bottom: 4px;">${conf}<strong style="color: var(--cyan);">RETRIEVAL SYNTHESIS:</strong></div>
+                    <div style="color: #cbd5e1; font-size: 11px; line-height: 1.5;">${escapeHtml(answer)}</div>
+                    ${citation}
+                `;
+            }
+            return;
+        }
+    } catch (e) {
+        console.error('Error in testRagRetrieval:', e);
+    }
+    if (container) container.innerHTML = '<div style="color: #ff4b4b; font-size: 11px;">Retrieval test failed. Verify vector index status.</div>';
+}
+
+// Window Exports
 window.openBusinessInsights = openBusinessInsights;
-window.openSuppliersPurchases = openSuppliersPurchases;
-window.showSystemStatus = showSystemStatus;
+window.loadBusinessInsights = loadBusinessInsights;
+window.onBIDatasetChange = onBIDatasetChange;
+
+window.openBusinessReports = openBusinessReports;
+window.closeBusinessReports = closeBusinessReports;
+window.loadBusinessReports = loadBusinessReports;
+window.onReportsSearch = onReportsSearch;
+window.onReportsFilterChange = onReportsFilterChange;
+window.generateNewReportFromModal = generateNewReportFromModal;
+window.previewReport = previewReport;
+window.closeReportPreview = closeReportPreview;
+window.deleteReportItem = deleteReportItem;
+
+window.openSavedDatasets = openSavedDatasets;
+window.closeSavedDatasets = closeSavedDatasets;
+window.loadSavedDatasetsModal = loadSavedDatasetsModal;
+window.onSavedDatasetsSearch = onSavedDatasetsSearch;
+window.onSavedDatasetsFilterChange = onSavedDatasetsFilterChange;
+window.triggerDatasetUploadModal = triggerDatasetUploadModal;
+window.openBIForDataset = openBIForDataset;
+window.launchMappingForDataset = launchMappingForDataset;
+window.previewDatasetRaw = previewDatasetRaw;
+window.deleteSavedDatasetFromModal = deleteSavedDatasetFromModal;
+
 window.openDocumentLibrary = openDocumentLibrary;
+window.closeDocumentLibrary = closeDocumentLibrary;
+window.loadDocumentLibraryModal = loadDocumentLibraryModal;
+window.triggerDocUploadModal = triggerDocUploadModal;
+window.previewDocChunks = previewDocChunks;
+window.closeDocChunksModal = closeDocChunksModal;
+window.reindexDocItem = reindexDocItem;
+window.deleteDocItem = deleteDocItem;
+window.testRagRetrieval = testRagRetrieval;
+
 
 // Quick Actions
 async function requestJoke() {
@@ -3813,11 +4562,13 @@ async function loadCatalogueProducts() {
                     <td style="color: var(--text-muted);">${escapeHtml(p.unit || 'piece')}</td>
                     <td>${p.reorder_level}</td>
                     <td>${statusPill}</td>
-                    <td>
-                        <button type="button" class="tbl-btn" onclick="openProductDetailModal(${p.id})">VIEW</button>
-                        <button type="button" class="tbl-btn adjust" onclick="openStockAdjustModal(${p.id}, 'receipt')">STOCK</button>
-                        <button type="button" class="tbl-btn" onclick="openEditProductModal(${p.id})">EDIT</button>
-                        ${p.is_active ? `<button type="button" class="tbl-btn deactivate" onclick="deactivateProduct(${p.id})">DEACTIVATE</button>` : ''}
+                    <td class="cat-actions-cell">
+                        <div class="cat-actions-group">
+                            <button type="button" class="tbl-btn" onclick="openProductDetailModal(${p.id})">VIEW</button>
+                            <button type="button" class="tbl-btn adjust" onclick="openStockAdjustModal(${p.id}, 'receipt')">STOCK</button>
+                            <button type="button" class="tbl-btn" onclick="openEditProductModal(${p.id})">EDIT</button>
+                            ${p.is_active ? `<button type="button" class="tbl-btn deactivate" onclick="deactivateProduct(${p.id})">DEACTIVATE</button>` : ''}
+                        </div>
                     </td>
                 </tr>
             `;
@@ -3868,10 +4619,12 @@ async function loadCatalogueInventory() {
                     <td style="color: var(--text-muted);">${escapeHtml(p.unit || 'piece')}</td>
                     <td>${statusPill}</td>
                     <td style="color: var(--text-muted); font-size: 0.68rem;">${updatedStr}</td>
-                    <td>
-                        <button type="button" class="tbl-btn adjust" onclick="openStockAdjustModal(${p.id}, 'receipt')">+ RECEIVE</button>
-                        <button type="button" class="tbl-btn adjust" onclick="openStockAdjustModal(${p.id}, 'adjustment')">± ADJUST</button>
-                        <button type="button" class="tbl-btn" onclick="openProductDetailModal(${p.id})">HISTORY</button>
+                    <td class="cat-actions-cell">
+                        <div class="cat-actions-group">
+                            <button type="button" class="tbl-btn adjust" onclick="openStockAdjustModal(${p.id}, 'receipt')">+ RECEIVE</button>
+                            <button type="button" class="tbl-btn adjust" onclick="openStockAdjustModal(${p.id}, 'adjustment')">± ADJUST</button>
+                            <button type="button" class="tbl-btn" onclick="openProductDetailModal(${p.id})">HISTORY</button>
+                        </div>
                     </td>
                 </tr>
             `;
@@ -4954,7 +5707,7 @@ function appendChatMessage(role, text, meta = {}) {
         }
 
         // Meta row with copy & speak buttons
-        const modelLabel = meta.model || 'qwen3:4b-instruct';
+        const modelLabel = meta.model || 'gemma4:e2b';
         const latencyLabel = meta.latency ? ` • Latency: ${meta.latency}s` : '';
         const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
@@ -5180,3 +5933,16 @@ function initComposerDragAndDrop() {
         });
     }
 }
+
+
+// Enterprise UI Hardening: Backdrop Dismissal for Modal Dialogs
+['biModal', 'catalogueModal', 'businessReportsModal', 'savedDatasetsModal', 'documentLibraryModal', 'reportPreviewModal'].forEach(id => {
+    const modalEl = document.getElementById(id);
+    if (modalEl) {
+        modalEl.addEventListener('click', (e) => {
+            if (e.target === modalEl) {
+                modalEl.style.display = 'none';
+            }
+        });
+    }
+});

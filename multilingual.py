@@ -44,9 +44,52 @@ def is_product_stopword(word: Optional[str]) -> bool:
         return True
     return all(t.lower() in PRODUCT_STOPWORDS for t in tokens)
 
+def find_product_entity(text: str, session_id: Optional[str] = None) -> Optional[str]:
+    """
+    Deterministically extracts product mentions or contextual demonstratives
+    from Hindi, Hinglish, or English user queries.
+    Handles exact names, common plurals, and conversational pronouns.
+    """
+    if not text:
+        return None
+    c_lower = text.strip().lower()
+
+    # 1. Contextual pronouns pointing to last discussed product
+    session_ctx = get_session_context(session_id)
+    if re.search(r'\b(its|it|iska|iski|iske|is product|iss product|this product|that product|us product|uska|uski|uske)\b', c_lower):
+        if session_ctx.last_product:
+            return session_ctx.last_product.get("name")
+        return "context_product"
+
+    # 2. Known catalogue products check (exact name and plurals)
+    known_products = ["Capacitor", "Chair", "Desk", "Laptop", "Monitor", "Phone", "Printer", "Tablet"]
+    try:
+        import database
+        prods = database.list_products(is_active=True, page_size=200)
+        items = prods.get("items", [])
+        if items:
+            known_products = [p["name"] for p in items]
+    except Exception:
+        pass
+
+    for p_name in known_products:
+        p_clean = p_name.strip()
+        # Word boundary match for exact singular name
+        if re.search(r'\b' + re.escape(p_clean.lower()) + r'\b', c_lower):
+            return p_clean
+        # Word boundary match for plural name (e.g. 'chairs', 'desks', 'tablets')
+        if re.search(r'\b' + re.escape(p_clean.lower()) + r's\b', c_lower):
+            return p_clean
+        if p_clean.lower().endswith(('s', 'x', 'z', 'ch', 'sh')):
+            if re.search(r'\b' + re.escape(p_clean.lower()) + r'es\b', c_lower):
+                return p_clean
+
+    return None
+
 
 # Conversational fillers and wake words to strip for canonical intent matching
 WAKE_WORDS = [
+    r'\bsarthi\b', r'\bhey sarthi\b', r'\bsaarthi\b', r'\bhey saarthi\b',
     r'\bjarvis\b', r'\bvantiq\b', r'\bassistant\b', r'\bbot\b', r'\bhey jarvis\b', r'\bhey vantiq\b'
 ]
 
@@ -661,17 +704,28 @@ def format_multilingual_response(
     elif intent == "selling_price":
         product = data.get("product")
         name = product.get("name", "Product") if product else data.get("name", "Product")
-        price = product.get("selling_price", 0.0) if product else data.get("price", 0.0)
-        cost = product.get("purchase_price", 0.0) if product else data.get("cost", 0.0)
+        price = product.get("selling_price") if product else data.get("price")
+        cost = product.get("purchase_price") if product else data.get("cost")
+        price_str = f"{currency}{float(price):,.2f}" if price is not None else "Not available"
+        cost_str = f"{currency}{float(cost):,.2f}" if cost is not None else "Not available"
         if lang == "hi":
-            speak = f"{name} का विक्रय मूल्य {currency}{price:,.2f} है, और लागत मूल्य {currency}{cost:,.2f} है।"
-            display = f"{name}: विक्रय मूल्य = {currency}{price:,.2f} | लागत = {currency}{cost:,.2f}"
+            if price is not None:
+                speak = f"{name} का विक्रय मूल्य (Selling Price) {price_str} है।"
+            else:
+                speak = f"{name} का विक्रय मूल्य कैटलॉग में उपलब्ध नहीं है।"
+            display = f"{name}: विक्रय मूल्य = {price_str} | लागत = {cost_str}"
         elif lang == "hinglish":
-            speak = f"{name} ka selling price {currency}{price:,.2f} hai aur purchase price {currency}{cost:,.2f} hai."
-            display = f"{name}: Selling Price = {currency}{price:,.2f} | Cost = {currency}{cost:,.2f}"
+            if price is not None:
+                speak = f"{name} ka selling price {price_str} hai."
+            else:
+                speak = f"{name} ka selling price catalogue mein available nahi hai."
+            display = f"{name}: Selling Price = {price_str} | Cost = {cost_str}"
         else:
-            speak = f"The selling price of {name} is {currency}{price:,.2f}, with a purchase cost of {currency}{cost:,.2f}."
-            display = f"{name}: Selling Price = {currency}{price:,.2f} | Cost = {currency}{cost:,.2f}"
+            if price is not None:
+                speak = f"The selling price of {name} is {price_str}."
+            else:
+                speak = f"The selling price of {name} is not available in the catalogue."
+            display = f"{name}: Selling Price = {price_str} | Cost = {cost_str}"
         return {"speak": speak, "display": display}
 
     elif intent == "supplier_lookup":
@@ -729,10 +783,14 @@ def format_multilingual_response(
 
     elif intent in ("product_margin", "product_profit"):
         name = data.get("name", "Product")
-        profit = data.get("profit", 0.0)
-        margin_pct = data.get("margin_pct", 0.0)
-        sp = data.get("selling_price", 0.0)
-        cp = data.get("purchase_price", 0.0)
+        profit_raw = data.get("profit")
+        margin_raw = data.get("margin_pct")
+        sp_raw = data.get("selling_price")
+        cp_raw = data.get("purchase_price")
+        profit = float(profit_raw) if profit_raw is not None else 0.0
+        margin_pct = float(margin_raw) if margin_raw is not None else 0.0
+        sp = float(sp_raw) if sp_raw is not None else 0.0
+        cp = float(cp_raw) if cp_raw is not None else 0.0
         basis_note = data.get("cost_basis_note", "")
         if intent == "product_profit":
             if lang == "hi":
@@ -881,6 +939,18 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
     ]):
         return ("follow_up_explain_lang", {"target_language": "Hinglish"})
 
+    # 0G. Conceptual Business Term Explanations (Bypass LLM Intent Classifier)
+    # Handles: "Gross margin kya hota hai samjhao", "What is gross margin?", "Markup kya hota hai", etc.
+    # IMPORTANT: Only trigger if no specific product entity is mentioned (e.g. 'Chair ka selling price' is product_price, NOT explanation)
+    expl_markers = ['kya hota hai', 'kya hai', 'samjhao', 'explain', 'what is', 'define', 'meaning of', 'difference']
+    if any(k in c_lower for k in expl_markers):
+        if not find_product_entity(c_lower, session_id=session_id):
+            accounting_terms = ['gross margin', 'markup', 'purchase price', 'selling price', 'reorder level', 'inventory turnover', 'cost of goods sold', 'cogs', 'profit margin']
+            for term in accounting_terms:
+                if term in c_lower:
+                    target_lang = "Hindi" if any(k in c_lower for k in ["hindi", "हिन्दी", "हिंदी"]) else ("Hinglish" if active_lang in ("hinglish", "hi") else "English")
+                    return ("explanation", {"concept": term, "language": target_lang})
+
     # 1. Product Verification
     if any(phrase in c_lower for phrase in [
         'verify all the products', 'verify all products', 'verify products',
@@ -890,20 +960,25 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
     ]) or (('verify' in c_lower or 'validate' in c_lower) and ('product' in c_lower or 'catalogue' in c_lower)):
         return ("product_verify", {})
 
-    # 2. Contextual follow-up: Cheapest / Most expensive product
+    # 2. Contextual pricing: Highest / Lowest Selling Price / Cheapest / Most expensive product
     if any(phrase in c_lower for phrase in [
         'sabse sasta', 'sabse saste', 'sabse sasti', 'cheapest product',
         'which one is cheapest', 'which product is cheapest', 'cheapest one',
-        'inmein sabse sasta', 'inme sabse sasta', 'sab se sasta', 'सबसे सस्ता'
+        'inmein sabse sasta', 'inme sabse sasta', 'sab se sasta', 'सबसे सस्ता',
+        'lowest selling price', 'lowest price', 'least expensive', 'sabse kam price',
+        'sabse sasta product'
     ]):
         return ("cheapest_product", {})
 
     if any(phrase in c_lower for phrase in [
         'sabse mehenga', 'sabse mehnge', 'sabse costly', 'most expensive',
-        'highest price product', 'inmein sabse mehenga', 'सबसे महंगा', 'सबसे महँगा'
-    ]):
+        'highest price product', 'inmein sabse mehenga', 'सबसे महंगा', 'सबसे महँगा',
+        'highest selling price', 'highest price', 'highest rate', 'highest cost',
+        'sabse zyada selling price', 'sabse jyada selling price',
+        'which product has the highest selling price', 'product with the highest selling price',
+        'product with highest selling price'
+    ]) or (('highest' in c_lower or 'maximum' in c_lower or 'most' in c_lower or 'sabse' in c_lower) and ('selling price' in c_lower or 'price' in c_lower or 'rate' in c_lower)):
         return ("expensive_product", {})
-
     # 3. Lowest stock products
     if any(phrase in c_lower for phrase in [
         'sabse kam stock', 'sab se kam stock', 'lowest stock', 'least stock',
@@ -925,16 +1000,45 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
         'low stock dikhao', 'low stock items', 'कम स्टॉक', 'कम स्टॉक वाले',
         'need reordering', 'needs reordering', 'products to reorder', 'reorder level',
         'reorder threshold', 'reorder alerts', 'reorder alert', 'which products need reorder',
-        'which products are low in stock', 'low stock', 'low in stock', 'low inventory',
-        'stock kam hai', 'kam stock', 'स्टॉक कम है', 'किन प्रोडक्ट्स का स्टॉक कम है'
+        'which products are low in stock', 'which products are low on stock',
+        'which products are running low on stock', 'running low on stock', 'running low in stock',
+        'low on stock', 'running low', 'low stock', 'low in stock', 'low inventory',
+        'stock kam hai', 'kam stock', 'स्टॉक कम है', 'किन प्रोडक्ट्स का स्टॉक कम है',
+        'kaun se products low stock mein hain', 'kon se products low stock mein hain',
+        'kaun se product low stock mein hain', 'low stock mein hain'
     ]):
         return ("low_stock_products", {})
 
+    # 5A. Inventory Valuation
+    if any(p in c_lower for p in [
+        'what is my total inventory value', 'what is the total inventory value',
+        'what is my inventory value', 'what is the inventory value',
+        'total inventory value', 'inventory valuation', 'total inventory valuation',
+        'total inventory value kitni hai', 'inventory value kitni hai',
+        'kul inventory value kitni hai', 'inventory ki value kitni hai',
+        'kul inventory value', 'inventory ka value', 'inventory ki total value'
+    ]):
+        return ('inventory_valuation', {})
     # 5B. Structured Business Intelligence & Sales Analytics
-    # 5B-1. Dataset Summary (Hindi / Hinglish only, English routes to central dataset resolver)
+    # 5B-0. Today's Sales
+    if any(p in c_lower for p in [
+        'aaj kitni sales hui', 'aaj ki sales', 'today sales', "today's sales",
+        'sales today', 'aaj kitna sales hua', 'aaj ka sales', 'aaj kitni bikri hui',
+        'aaj ki bikri', 'todays sales'
+    ]):
+        return ('sales_summary', {'period': 'today'})
+
+    # 5B-1. Dataset Summary & Dataset Revenue
+    if any(p in c_lower for p in [
+        'what is the revenue for this dataset', 'what is the revenue of this dataset',
+        'dataset revenue', 'total revenue for this dataset', 'revenue for this dataset',
+        'revenue of this dataset', 'is dataset ka revenue', 'dataset ka revenue',
+        'total dataset revenue'
+    ]):
+        return ('dataset_summary', {'focus': 'revenue'})
+
     if any(p in c_lower for p in ['dataset ka summary', 'dataset ka vivaran', 'dataset overview batao', 'is dataset ka summary']):
         return ('dataset_summary', {})
-
     # 5B-2. Regional Sales Breakdown
     if any(p in c_lower for p in ['sales by region', 'sales by regions', 'regional sales', 'region wise sales', 'sales breakdown by region']) or (('sale' in c_lower or 'sales' in c_lower) and 'region' in c_lower):
         return ('sales_by_region', {})
@@ -953,9 +1057,16 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
             return ('compare_product_sales', {'product_a': p_a, 'product_b': p_b})
 
     # 5B-5. Top Performing Product (Highest Revenue / Highest Sales)
-    if any(p in c_lower for p in ['highest revenue', 'highest sales', 'highest selling', 'top selling', 'top revenue', 'best selling', 'sabse zyada bikne wala', 'sabse jyada bikne wala', 'sabse zyada sales', 'sabse jyada sales']):
+    if any(p in c_lower for p in [
+        'kis product se sabse zyada revenue aaya', 'kis product se sabse jyada revenue aaya',
+        'kis product ne sabse zyada revenue', 'kis product ka revenue sabse zyada hai',
+        'highest revenue product', 'top revenue product', 'top product by revenue',
+        'which product generated the most revenue', 'which product brought the highest revenue',
+        'which product has the highest revenue',
+        'highest revenue', 'highest sales', 'top revenue', 'best selling',
+        'sabse zyada bikne wala', 'sabse jyada bikne wala', 'sabse zyada sales', 'sabse jyada sales'
+    ]) or (('highest selling' in c_lower or 'top selling' in c_lower) and 'selling price' not in c_lower):
         return ('top_sales_product', {})
-
     # 5B-6. Lowest Performing Product (Lowest Sales / Lowest Revenue)
     if any(p in c_lower for p in ['lowest sales', 'lowest revenue', 'least sales', 'lowest selling', 'sabse kam bikne wala', 'sabse kam sales']):
         return ('lowest_sales_product', {})
@@ -994,18 +1105,29 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
         if cand not in date_noise and not any(w in cand for w in ['month', 'year', 'week']):
             return ('product_sales_revenue', {'product_name': cand})
 
-    # 5B-10. Hinglish Quantity / Kitne hai (e.g. Chair kitne hai)
-    # Strictly excluded if query asks about stock, profit, margin, price, cost to preserve dedicated handlers
-    if not any(k in c_lower for k in ['stock', 'stok', 'स्टॉक', 'profit', 'margin', 'munafa', 'labh', 'price', 'keemat', 'cost', 'rate', 'bhav', 'bechne', 'selling']):
+    # 5B-10. Hinglish Quantity / Kitne hai (e.g. Chair kitne hai, Kitne Chair available hain)
+    if not any(k in c_lower for k in ['profit', 'margin', 'munafa', 'labh', 'price', 'keemat', 'cost', 'rate', 'bhav', 'bechne']):
+        m_qty_front = re.search(r'(?:kitne|kitna|kitni|how\s+many)\s+([a-zA-Z0-9_\-\s]+?)\s+(?:available\s+hain|available\s+hai|available|hain|hai|bache\s+hain|bache\s+hai|bachi\s+hai|in\s+stock)', c_lower)
+        if m_qty_front:
+            cand = m_qty_front.group(1).strip()
+            cand = re.sub(r'^(?:is|iss|the|a|an)\s+', '', cand).strip()
+            cand_ent = find_product_entity(cand, session_id=session_id) or cand
+            if cand_ent.lower() in ('products', 'items', 'item', 'product', 'प्रोडक्ट', 'प्रोडक्ट्स'):
+                return ('product_count', {})
+            if cand_ent.lower() in ('maal', 'inventory', 'stock'):
+                return ('inventory_summary', {})
+            if not is_product_stopword(cand_ent):
+                return ('product_stock', {'product_name': cand_ent, 'is_quantity_query': True})
+
         m_kh = re.search(r'([a-zA-Z0-9_\-\s]+?)\s+(?:kitne|kitna|kitni)\s+(?:hai|hain|bache\s+hai|bache\s+hain)', c_lower)
         if m_kh:
             cand = m_kh.group(1).strip()
             cand = re.sub(r'^(?:is|iss|the|a|an)\s+', '', cand).strip()
-            if cand in ('maal', 'products', 'items'):
+            cand_ent = find_product_entity(cand, session_id=session_id) or cand
+            if cand_ent.lower() in ('maal', 'products', 'items'):
                 return ('inventory_summary', {})
-            if not is_product_stopword(cand):
-                return ('product_stock', {'product_name': cand, 'is_quantity_query': True})
-
+            if not is_product_stopword(cand_ent):
+                return ('product_stock', {'product_name': cand_ent, 'is_quantity_query': True})
     # 6. Specific product stock query & Incomplete Stock Inquiry
     # Handles: "Tell me the stock of the", "Tell me the stock of", "Stock of this product?",
     # "Iska stock kitna hai?", "Product ka stock batao", "Capacitor ka current stock kitna hai?"
@@ -1020,7 +1142,7 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
         ]) or c_lower.strip('?.! ') in ('stock', 'current stock', 'total stock', 'kul stock')
 
         if not is_overall_stock:
-            cand = None
+            cand = find_product_entity(c_lower, session_id=session_id)
             # Pattern A: "stock of <cand>" or "stock of"
             stock_of_match = re.search(r'(?:current\s+)?stock\s+of(?:\s+([a-zA-Z0-9_\-\s]+))?', c_lower)
             if stock_of_match:
@@ -1117,6 +1239,10 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
         return ("market_price_inquiry", {"product_name": m_cand, "query": q})
 
     # 10B. Specific product selling price
+    if any(k in c_lower for k in ['selling price', 'sale price', 'vikray mulya', 'bechne ka rate', 'bechne ka bhav', 'bechne ki keemat', 'ka selling price', 'selling price kya hai', 'price of', 'rate of']):
+        cand = find_product_entity(c_lower, session_id=session_id)
+        if cand and cand not in ('product', 'catalogue', 'all', 'everything', 'products'):
+            return ("product_price", {"product_name": cand, "price_type": "selling"})
     # Hinglish: "<Product> ka selling price kya hai", "<Product> ka price"
     price_hinglish_match = re.search(r'([a-zA-Z0-9_\-\s]+?)\s+ka\s+(?:selling\s+price|price|rate|bhav)(\s+kya\s+hai)?', c_lower)
     if price_hinglish_match:
@@ -1166,36 +1292,14 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
     # "Gross margin aur markup mein kya difference hai?"
     if any(term in c_lower for term in ['difference', 'antar', 'farq']) or 'kya difference' in c_lower:
         if ('purchase price' in c_lower and 'selling price' in c_lower) or ('cost price' in c_lower and 'selling price' in c_lower):
-            return ("explanation", {"concept": "purchase price and selling price difference", "language": active_lang})
+            target_lang = "Hindi" if any(k in c_lower for k in ["hindi", "हिन्दी", "हिंदी"]) else ("Hinglish" if active_lang in ("hinglish", "hi") else "English")
+            return ("explanation", {"concept": "purchase price and selling price difference", "language": target_lang})
         if ('gross margin' in c_lower and 'markup' in c_lower) or ('margin' in c_lower and 'markup' in c_lower):
-            return ("explanation", {"concept": "gross margin and markup difference", "language": active_lang})
+            target_lang = "Hindi" if any(k in c_lower for k in ["hindi", "हिन्दी", "हिंदी"]) else ("Hinglish" if active_lang in ("hinglish", "hi") else "English")
+            return ("explanation", {"concept": "gross margin and markup difference", "language": target_lang})
 
     # 13. Profit & Margin Inquiries (Product Profit, Product Margin & Overall Margin)
-    # E.g. "What is the profit of Capacitor?", "What profit do we make selling Capacitor?",
-    # "Calculate profit on Capacitor", "What is the margin on Chair?", "Chair ka margin kitna hai?",
-    # "Capacitor bechne par kitna profit hai?"
     if any(k in c_lower for k in ['margin', 'profit', 'munafa', 'मार्जिन', 'मुनाफा', 'लाभ']):
-        # Check if user explicitly asks for an abstract conceptual textbook definition
-        clean_no_lang = re.sub(r'\b(in\s+)?(hindi|english|hinglish|french|spanish|german|devanagari)\b', '', c_lower, flags=re.IGNORECASE).strip('?.! ')
-        clean_no_lang = re.sub(r'\b(mein|me)\s+samjhao\b', '', clean_no_lang, flags=re.IGNORECASE).strip('?.! ')
-        is_conceptual = (
-            clean_no_lang in (
-                'what is margin', 'what is the margin', 'what is gross margin', 'what is the gross margin',
-                'margin kya hota hai', 'gross margin kya hota hai',
-                'define margin', 'explain margin', 'define gross margin', 'explain gross margin',
-                'what is profit', 'what is the profit', 'what is gross profit', 'what is the gross profit',
-                'profit kya hota hai', 'define profit', 'explain profit',
-                'what is profit margin', 'profit margin kya hota hai'
-            ) or (
-                clean_no_lang.startswith(('explain ', 'define ')) and
-                not any(w in clean_no_lang for w in [' of ', ' on ', ' for ', ' in ', ' selling ', ' bechne ', ' par ', ' me ', ' mein ', ' ka ', ' ki ', ' ke '])
-            )
-        )
-        if is_conceptual:
-            target_lang = "Hindi" if "hindi" in c_lower else ("Hinglish" if active_lang == "hinglish" else "English")
-            concept = "gross profit" if ("profit" in c_lower and "margin" not in c_lower) else "gross margin"
-            return ("explanation", {"concept": concept, "language": target_lang})
-
         # Detect explicit cost basis request (e.g. latest purchase rate)
         is_last_rate = any(k in c_lower for k in [
             'last purchase rate', 'latest purchase rate', 'last purchase cost', 'last purchase price',
@@ -1204,7 +1308,41 @@ def match_multilingual_intent(query: str, lang: str = "en", session_id: Optional
         ])
         cost_basis = "last_purchase_rate" if is_last_rate else "purchase_price"
 
-        cand = None
+        # 1. Product Entity Lookup first (checks exact names, plurals, pronouns like its/iska)
+        cand = find_product_entity(c_lower, session_id=session_id)
+
+        # 2. Check for overall / catalogue / business-wide margin or profit (only if no specific product)
+        if not cand:
+            if any(p in c_lower for p in [
+                'mere business ka gross profit', 'mere business ka profit', 'business ka gross profit', 'business ka profit',
+                'my business profit', 'business gross profit', 'gross profit of my business', 'profit of my business',
+                'margin kya hai', 'margin kitna hai', 'overall margin', 'average margin',
+                'what is the margin', 'what is our margin', 'profit margin kya hai',
+                'overall profit', 'total profit', 'total margin',
+                'कुल मार्जिन', 'औसत मार्जिन', 'मार्जिन क्या है'
+            ]) or c_lower.strip('?.! ') in ('margin', 'gross margin', 'profit margin', 'margin kya hai', 'profit'):
+                return ("catalogue_margin", {"cost_basis": cost_basis})
+
+            # Check if user explicitly asks for an abstract conceptual textbook definition
+            clean_no_lang = re.sub(r'\b(in\s+)?(hindi|english|hinglish|french|spanish|german|devanagari)\b', '', c_lower, flags=re.IGNORECASE).strip('?.! ')
+            clean_no_lang = re.sub(r'\b(mein|me)\s+samjhao\b', '', clean_no_lang, flags=re.IGNORECASE).strip('?.! ')
+            is_conceptual = (
+                clean_no_lang in (
+                    'what is margin', 'what is the margin', 'what is gross margin', 'what is the gross margin',
+                    'margin kya hota hai', 'gross margin kya hota hai',
+                    'define margin', 'explain margin', 'define gross margin', 'explain gross margin',
+                    'what is profit', 'what is the profit', 'what is gross profit', 'what is the gross profit',
+                    'profit kya hota hai', 'define profit', 'explain profit',
+                    'what is profit margin', 'profit margin kya hota hai'
+                ) or (
+                    clean_no_lang.startswith(('explain ', 'define ')) and
+                    not any(w in clean_no_lang for w in [' of ', ' on ', ' for ', ' in ', ' selling ', ' bechne ', ' par ', ' me ', ' mein ', ' ka ', ' ki ', ' ke '])
+                )
+            )
+            if is_conceptual:
+                target_lang = "Hindi" if "hindi" in c_lower else ("Hinglish" if active_lang == "hinglish" else "English")
+                concept = "gross profit" if ("profit" in c_lower and "margin" not in c_lower) else "gross margin"
+                return ("explanation", {"concept": concept, "language": target_lang})
 
         # 1. English Profit Queries
         # "What profit do we make selling Capacitor?", "what is the profit selling a capacitor"

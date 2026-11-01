@@ -50,7 +50,7 @@ logger = logging.getLogger("VANTIQ-RAGEngine")
 
 # Relevance & chunking parameters
 MIN_RELEVANCE_SCORE = 0.06
-MAX_CHUNKS_PER_QUERY = 4
+MAX_CHUNKS_PER_QUERY = 3
 DEFAULT_CHUNK_SIZE = 600
 DEFAULT_CHUNK_OVERLAP = 100
 MIN_TEXT_CHARS_FOR_OCR_CHECK = 40
@@ -816,12 +816,15 @@ def answer_document_query(
                             {"role": "user", "content": user_prompt}
                         ],
                         "stream": False,
+                        "keep_alive": "10m",
                         "options": {
                             "temperature": 0.1,
-                            "num_predict": 250
+                            "num_predict": 220,
+                            "num_ctx": 2048,
+                            "num_thread": 6
                         }
                     },
-                    timeout=20.0
+                    timeout=35.0
                 )
                 if resp.status_code == 200:
                     answer_content = resp.json().get("message", {}).get("content", "").strip()

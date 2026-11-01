@@ -2598,6 +2598,93 @@ body {
     color: #FFFFFF;
 }
 
+
+/* =========================================================================
+   Table Action Buttons for Catalogue & Inventory Management
+   ========================================================================= */
+.cat-actions-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+}
+
+.tbl-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14, 28, 48, 0.9);
+    border: 1px solid rgba(2, 132, 199, 0.35);
+    border-radius: var(--radius-sm, 4px);
+    color: #C5D5E8;
+    font-family: var(--font-sans);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    padding: 4px 8px;
+    margin: 1px 2px;
+    cursor: pointer;
+    transition: all var(--transition-fast, 0.15s ease);
+    text-transform: uppercase;
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+.tbl-btn:hover {
+    background: rgba(2, 132, 199, 0.22);
+    border-color: var(--cyan);
+    color: #FFFFFF;
+    box-shadow: 0 0 8px rgba(22, 217, 232, 0.3);
+    transform: translateY(-1px);
+}
+
+.tbl-btn:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 1px;
+}
+
+.tbl-btn.adjust {
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #FCD34D;
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.tbl-btn.adjust:hover {
+    background: rgba(245, 158, 11, 0.25);
+    border-color: #F59E0B;
+    color: #FFFFFF;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+}
+
+.tbl-btn.deactivate {
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #F87171;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.tbl-btn.deactivate:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: #EF4444;
+    color: #FFFFFF;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.cat-table td.cat-actions-cell,
+.cat-table td:last-child {
+    white-space: nowrap;
+    min-width: 220px;
+}
+
+@media (max-width: 768px) {
+    .tbl-btn {
+        padding: 4px 6px;
+        font-size: 0.60rem;
+    }
+    .cat-table td:last-child {
+        min-width: 190px;
+    }
+}
+
 /* Pagination Bar */
 .library-pagination-row {
     display: flex;
@@ -6562,4 +6649,136 @@ img, svg, video, canvas {
     .cat-table {
         min-width: 520px !important;
     }
+}
+
+
+/* ============================================================== */
+/* SARTHI DEDICATED DESTINATIONS: REPORTS, DATASETS, DOCS CSS     */
+/* ============================================================== */
+
+.reports-container,
+.datasets-container,
+.docs-container {
+    max-width: 1200px;
+    width: 95vw;
+    height: 88vh;
+    max-height: 900px;
+}
+
+.empty-dossier-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 24px;
+    text-align: center;
+    color: var(--text-secondary);
+    border: 1px dashed rgba(0, 243, 255, 0.2);
+    border-radius: 8px;
+    margin: 20px 0;
+    background: rgba(10, 16, 26, 0.4);
+}
+
+.empty-dossier-state .empty-icon {
+    color: var(--gold-champagne);
+    opacity: 0.7;
+    margin-bottom: 16px;
+}
+
+.empty-dossier-state h3 {
+    font-family: var(--font-header);
+    font-size: 15px;
+    letter-spacing: 1.5px;
+    color: #fff;
+    margin-bottom: 8px;
+}
+
+.empty-dossier-state p {
+    font-size: 12px;
+    max-width: 480px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.tbl-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+
+.tbl-badge.indexed,
+.tbl-badge.active,
+.tbl-badge.verified,
+.tbl-badge.success {
+    background: rgba(0, 255, 157, 0.12);
+    color: #00ff9d;
+    border: 1px solid rgba(0, 255, 157, 0.3);
+}
+
+.tbl-badge.unindexed,
+.tbl-badge.pending,
+.tbl-badge.warning {
+    background: rgba(255, 184, 0, 0.12);
+    color: #ffb800;
+    border: 1px solid rgba(255, 184, 0, 0.3);
+}
+
+.tbl-badge.error,
+.tbl-badge.failed,
+.tbl-badge.inactive {
+    background: rgba(255, 75, 75, 0.12);
+    color: #ff4b4b;
+    border: 1px solid rgba(255, 75, 75, 0.3);
+}
+
+.tbl-badge.format,
+.tbl-badge.cyan {
+    background: rgba(0, 243, 255, 0.12);
+    color: var(--cyan);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+}
+
+.tbl-badge.gold {
+    background: rgba(212, 175, 55, 0.12);
+    color: var(--gold-champagne);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+}
+
+.bi-dataset-selector-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chunk-card {
+    background: rgba(14, 22, 36, 0.75);
+    border: 1px solid rgba(0, 243, 255, 0.15);
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 10px;
+    font-family: var(--font-mono);
+}
+
+.chunk-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: var(--gold-champagne);
+}
+
+.chunk-body {
+    font-size: 11px;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+    background: rgba(6, 11, 20, 0.6);
+    padding: 8px;
+    border-radius: 3px;
 }
