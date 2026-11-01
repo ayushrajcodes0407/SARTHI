@@ -180,11 +180,54 @@ def get_status():
 def get_llm_status():
     """
     Returns the real-time health check, reachability, and model availability
-    for the local Ollama instance (qwen3:4b-instruct).
+    for the local Ollama instance.
     Zero external calls, 100% loopback offline verification.
     """
     health = local_llm.check_ollama_health()
     return jsonify(health)
+
+
+@app.route('/api/llm/model', methods=['GET', 'POST'])
+def manage_llm_model():
+    """
+    GET: Returns currently active model, fallback model, supported models, and loaded models.
+    POST: Selects and switches active model (e.g. 'qwen3:4b-instruct' vs 'gemma4:e2b'),
+          unloading the displaced model from memory via keep_alive: 0 to avoid RAM contention.
+    """
+    if request.method == 'POST':
+        data = request.json or {}
+        new_model = data.get("model")
+        if not new_model:
+            return jsonify({
+                "status": "error",
+                "error": "Missing 'model' parameter in request body."
+            }), 400
+
+        unload_previous = data.get("unload_previous", True)
+        success, message = local_llm.set_active_model(new_model, unload_previous=unload_previous)
+        status_code = 200 if success else 400
+        health = local_llm.check_ollama_health(force=True)
+        return jsonify({
+            "status": "success" if success else "error",
+            "message": message,
+            "active_model": local_llm.get_active_model(),
+            "fallback_model": local_llm.get_fallback_model(),
+            "supported_models": local_llm.SUPPORTED_MODELS,
+            "loaded_models": health.get("loaded_models", []),
+            "offline_mode": True
+        }), status_code
+
+    # GET
+    health = local_llm.check_ollama_health()
+    return jsonify({
+        "status": "success",
+        "active_model": local_llm.get_active_model(),
+        "fallback_model": local_llm.get_fallback_model(),
+        "supported_models": local_llm.SUPPORTED_MODELS,
+        "available_models": health.get("available_models", []),
+        "loaded_models": health.get("loaded_models", []),
+        "offline_mode": True
+    }), 200
 
 @app.route('/api/system', methods=['GET'])
 def get_system():
@@ -1320,20 +1363,22 @@ def query_rag_documents():
 def process_command():
     data = request.json or {}
     raw_cmd = data.get('command', '').strip()
+    req_model = data.get('model')
     request_id = data.get('request_id') or f"req_{int(time.time()*1000)}"
     session_id = data.get('session_id')
     start_time = time.time()
-    logger.info(f"[{request_id}] Command received: '{raw_cmd}' (session: {session_id})")
+    logger.info(f"[{request_id}] Command received: '{raw_cmd}' (session: {session_id}, model: {req_model})")
 
     context = {
         "active_dataset_id": CURRENT_FILE_INFO.get("dataset_id") if CURRENT_FILE_INFO else None,
         "current_file_info": CURRENT_FILE_INFO,
         "current_bi_report": CURRENT_BI_REPORT,
-        "session_id": session_id
+        "session_id": session_id,
+        "model": req_model
     }
 
     try:
-        response = intent_router.route_intent(raw_cmd, context=context, request_id=request_id)
+        response = intent_router.route_intent(raw_cmd, context=context, request_id=request_id, model=req_model)
         elapsed = round((time.time() - start_time) * 1000, 1)
         if not response.get("request_id"):
             response["request_id"] = request_id

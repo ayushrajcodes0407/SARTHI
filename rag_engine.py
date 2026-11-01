@@ -797,44 +797,52 @@ def answer_document_query(
     cfg = local_llm.get_ollama_config()
     health = local_llm.check_ollama_health(base_url=cfg["base_url"], model=cfg["model"], timeout=2.0) if ollama_enabled else {"service_running": False, "model_available": False}
 
-    # Try local LLM if running
-    if ollama_enabled and health["service_running"] and health["model_available"]:
-        try:
-            import requests
-            resp = requests.post(
-                f"{cfg['base_url']}/api/chat",
-                json={
-                    "model": cfg["model"],
-                    "messages": [
-                        {"role": "system", "content": system_instruction},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.1,
-                        "num_predict": 250
-                    }
-                },
-                timeout=15.0
-            )
-            if resp.status_code == 200:
-                answer_content = resp.json().get("message", {}).get("content", "").strip()
-                # Ensure at least one citation appears in the answer
-                cit_strs = [c["citation"] for c in unique_citations]
-                if not any(cs in answer_content for cs in cit_strs) and cit_strs:
-                    answer_content += f"\n\n{cit_strs[0]}"
+    # Try local LLM if running (with graceful model fallback)
+    if ollama_enabled and health["service_running"]:
+        models_to_try = [cfg["model"]]
+        fallback_m = cfg.get("fallback_model")
+        if fallback_m and fallback_m != cfg["model"]:
+            models_to_try.append(fallback_m)
 
-                return {
-                    "success": True,
-                    "has_sufficient_evidence": True,
-                    "answer": answer_content,
-                    "citations": unique_citations,
-                    "retrieved_chunks": chunks,
-                    "confidence": round(chunks[0]["relevance_score"], 3),
-                    "source": "local_llm_rag"
-                }
-        except Exception as e:
-            logger.warning(f"Ollama inference error during RAG answer generation: {e}")
+        for attempt_idx, m_name in enumerate(models_to_try):
+            try:
+                import requests
+                resp = requests.post(
+                    f"{cfg['base_url']}/api/chat",
+                    json={
+                        "model": m_name,
+                        "messages": [
+                            {"role": "system", "content": system_instruction},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.1,
+                            "num_predict": 250
+                        }
+                    },
+                    timeout=20.0
+                )
+                if resp.status_code == 200:
+                    answer_content = resp.json().get("message", {}).get("content", "").strip()
+                    cit_strs = [c["citation"] for c in unique_citations]
+                    if not any(cs in answer_content for cs in cit_strs) and cit_strs:
+                        answer_content += f"\n\n{cit_strs[0]}"
+
+                    return {
+                        "success": True,
+                        "has_sufficient_evidence": True,
+                        "answer": answer_content,
+                        "citations": unique_citations,
+                        "retrieved_chunks": chunks,
+                        "confidence": round(chunks[0]["relevance_score"], 3),
+                        "source": "local_llm_rag",
+                        "model_used": m_name,
+                        "fallback_triggered": (attempt_idx > 0),
+                        "offline_mode": True
+                    }
+            except Exception as e:
+                logger.warning(f"Ollama inference error with '{m_name}' during RAG answer generation: {e}")
 
     # Deterministic fallback when Ollama is offline or times out
     # Select most relevant sentences from top chunk

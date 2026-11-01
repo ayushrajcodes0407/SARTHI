@@ -25,10 +25,81 @@ import requests
 
 logger = logging.getLogger("VANTIQ-LocalLLM")
 
-# Configuration defaults
+# Configuration defaults & Supported Models
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_MODEL = "qwen3:4b-instruct"
-DEFAULT_OLLAMA_TIMEOUT = 30.0
+ALTERNATIVE_OLLAMA_MODEL = "gemma4:e2b"
+SUPPORTED_MODELS = [
+    "qwen3:4b-instruct",
+    "gemma4:e2b"
+]
+DEFAULT_OLLAMA_TIMEOUT = 45.0
+_ACTIVE_MODEL: Optional[str] = None
+
+
+def get_active_model() -> str:
+    """Retrieves current active local LLM model name."""
+    global _ACTIVE_MODEL
+    if _ACTIVE_MODEL:
+        return _ACTIVE_MODEL
+    return os.environ.get("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+
+
+def get_fallback_model(primary: Optional[str] = None) -> str:
+    """Returns the alternate fallback model corresponding to the primary model."""
+    p = (primary or get_active_model()).lower()
+    if "gemma" in p:
+        return DEFAULT_OLLAMA_MODEL
+    return ALTERNATIVE_OLLAMA_MODEL
+
+
+def unload_model(model_name: str, base_url: Optional[str] = None, timeout: float = 5.0) -> bool:
+    """
+    Unloads a model from RAM by sending keep_alive: 0 to Ollama /api/generate.
+    Prevents memory contention and simultaneous model loading in RAM.
+    """
+    cfg = get_ollama_config()
+    target_url = (base_url or cfg["base_url"]).rstrip("/")
+    try:
+        resp = requests.post(
+            f"{target_url}/api/generate",
+            json={"model": model_name, "keep_alive": 0},
+            timeout=timeout
+        )
+        logger.info(f"Unloaded model '{model_name}' from RAM: HTTP {resp.status_code}")
+        return resp.status_code == 200
+    except Exception as e:
+        logger.warning(f"Could not unload model '{model_name}': {e}")
+        return False
+
+
+def set_active_model(model_name: str, unload_previous: bool = True) -> Tuple[bool, str]:
+    """
+    Selects the active local LLM at runtime without changing business logic.
+    If unload_previous is True, triggers RAM unloading of the displaced model.
+    """
+    global _ACTIVE_MODEL, _HEALTH_CACHE
+    if not model_name or not isinstance(model_name, str):
+        return False, "Model name must be a non-empty string"
+
+    cleaned_name = model_name.strip()
+    prev = get_active_model()
+
+    health = check_ollama_health(model=cleaned_name, force=True)
+    if not health.get("service_running"):
+        return False, f"Ollama service unreachable on loopback at {health.get('base_url')}."
+
+    available = health.get("available_models", [])
+    found = any(cleaned_name.lower() in m.lower() or m.lower().startswith(cleaned_name.lower().split(':')[0]) for m in available)
+    if not found and available:
+        return False, f"Model '{cleaned_name}' is not installed in local Ollama. Available: {available}"
+
+    if unload_previous and prev != cleaned_name:
+        unload_model(prev)
+
+    _ACTIVE_MODEL = cleaned_name
+    _HEALTH_CACHE = {"result": None, "timestamp": 0.0, "ttl": 3.0}
+    return True, f"Active model set to '{cleaned_name}'."
 
 # Allowlist of canonical intents
 CANONICAL_INTENTS = {
@@ -86,9 +157,9 @@ CANONICAL_INTENTS = {
 
 
 def get_ollama_config() -> Dict[str, Any]:
-    """Retrieves current local LLM configuration from environment variables."""
+    """Retrieves current local LLM configuration from environment variables or active runtime setting."""
     base_url = os.environ.get("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).rstrip("/")
-    model = os.environ.get("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    model = get_active_model()
     try:
         timeout = float(os.environ.get("OLLAMA_TIMEOUT", DEFAULT_OLLAMA_TIMEOUT))
     except (ValueError, TypeError):
@@ -103,8 +174,11 @@ def get_ollama_config() -> Dict[str, Any]:
     return {
         "base_url": base_url,
         "model": model,
+        "fallback_model": get_fallback_model(model),
+        "supported_models": list(SUPPORTED_MODELS),
         "timeout": timeout,
-        "enabled": enabled
+        "enabled": enabled,
+        "offline_mode": True
     }
 
 
@@ -183,6 +257,14 @@ def check_ollama_health(base_url: Optional[str] = None, model: Optional[str] = N
         models = [m.get("name", "") for m in data.get("models", [])]
         model_found = any(target_model.lower() in m.lower() or m.lower().startswith(target_model.lower().split(':')[0]) for m in models)
 
+        loaded_models = []
+        try:
+            ps_resp = requests.get(f"{target_url}/api/ps", timeout=1.0)
+            if ps_resp.status_code == 200:
+                loaded_models = [m.get("name", "") for m in ps_resp.json().get("models", [])]
+        except Exception:
+            pass
+
         if model_found:
             status = "online"
             msg = f"Local Ollama online ({latency_ms}ms). Model '{target_model}' ready."
@@ -195,8 +277,13 @@ def check_ollama_health(base_url: Optional[str] = None, model: Optional[str] = N
             "service_running": True,
             "model_available": model_found,
             "configured_model": target_model,
+            "active_model": target_model,
+            "fallback_model": get_fallback_model(target_model),
+            "supported_models": list(SUPPORTED_MODELS),
             "base_url": target_url,
             "available_models": models,
+            "loaded_models": loaded_models,
+            "offline_mode": True,
             "latency_ms": latency_ms,
             "message": msg
         }
@@ -282,7 +369,8 @@ def _extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
 def interpret_natural_language(
     query: str,
     context: Optional[Dict[str, Any]] = None,
-    timeout: Optional[float] = None
+    timeout: Optional[float] = None,
+    model: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Uses the local Ollama LLM to classify user intent and extract query parameters.
@@ -302,148 +390,162 @@ def interpret_natural_language(
         logger.debug("Local LLM is disabled via OLLAMA_ENABLED=false.")
         return None
 
-    # Check Ollama health (quick 2s timeout)
-    health = check_ollama_health(base_url=cfg["base_url"], model=cfg["model"], timeout=2.0)
-    if not health["service_running"] or not health["model_available"]:
-        logger.debug(f"Local LLM unavailable: {health['message']}")
-        return None
+    primary_model = model or get_active_model()
+    fallback_model = get_fallback_model(primary_model)
 
-    context = context or {}
-    active_ds = context.get("active_dataset_filename") or "None"
+    def _execute_interpretation(target_model: str) -> Optional[Dict[str, Any]]:
+        health = check_ollama_health(base_url=cfg["base_url"], model=target_model, timeout=2.0)
+        if not health["service_running"] or not health["model_available"]:
+            logger.debug(f"Local LLM ({target_model}) unavailable: {health.get('message')}")
+            return None
 
-    system_prompt = (
-        "You are VANTIQ Natural Language Intent Router. "
-        "Your task is to interpret the user's business query into a strictly validated JSON structure.\n"
-        "Allowed canonical intents:\n"
-        "- product_list: list all catalogue products (e.g., 'show all products', 'saare products dikhao', 'kaun kaun se products hai')\n"
-        "- product_count: count total products or inventory units (e.g., 'how many products', 'kitne products hai')\n"
-        "- product_verify: audit and verify catalogue products (e.g., 'verify all the products', 'products check karo')\n"
-        "- product_search: find or search product by name or SKU\n"
-        "- product_stock: check stock balance of a specific product (e.g., 'stock of Capacitor', 'Capacitor ka stock kitna hai')\n"
-        "- inventory_summary: general inventory and stock summary when no product name is given (e.g., 'what is current stock bro', 'current stock batao', 'stock status')\n"
-        "- low_stock_products: products below reorder level or low in stock (e.g., 'low stock products', 'kam stock wale products')\n"
-        "- out_of_stock_products: products with zero stock (e.g., 'out of stock products', 'kaun se products ka stock khatam ho gaya')\n"
-        "- lowest_stock_products: products ordered by least stock (e.g., 'sabse kam stock kin products ka hai')\n"
-        "- products_without_price: products with no selling price configured\n"
-        "- product_price: get selling price or purchase cost of a specific product\n"
-        "- product_profit: calculate gross profit per unit or financial profit for a specific product (e.g., 'what is the profit of Capacitor', 'Capacitor bechne par kitna profit hai')\n"
-        "- product_margin: get gross margin, profit, or markup percentage for a specific product (e.g., 'margin kya hai chair me', 'chair ka margin kitna hai', 'what is the margin of chair')\n"
-        "- catalogue_margin: get overall or average gross margin across the catalogue or business (e.g., 'margin kya hai', 'what is the average margin', 'highest margin product')\n"
-        "- supplier_lookup: find supplier details for a product or list suppliers (e.g., 'supplier of <Product>', '<Product> ka supplier kaun hai', 'list suppliers')\n"
-        "- cheapest_product: find the cheapest product from previous list (e.g., 'inmein sabse sasta kaunsa hai', 'which is cheapest')\n"
-        "- expensive_product: find most expensive product from previous list\n"
-        "- dataset_summary: overview/summary of active dataset\n"
-        "- dataset_dimensions: row and column counts\n"
-        "- dataset_missing_values: missing or null cells in each column\n"
-        "- dataset_columns: list column names and types\n"
-        "- dataset_duplicates: check for duplicate rows\n"
-        "- dataset_head: show first rows\n"
-        "- dataset_stats: average, mean, min, max of a column\n"
-        "- dataset_filter: filter rows by column value\n"
-        "- dataset_group: group by category/column and count\n"
-        "- dataset_dates: detect date columns\n"
-        "- business_insights: explain top findings or executive summary\n"
-        "- bi_pricing: gross margins or profitability analysis\n"
-        "- bi_inventory: dataset inventory or stock status\n"
-        "- bi_sales: sales trends or revenue\n"
-        "- product_details: comprehensive details, SKU, stock, price, and supplier for a product (e.g. 'show details for SKU-101', 'details of Product X')\n"
-        "- purchase_rate_history: latest or last recorded purchase rate/cost for a product (e.g. 'what was the last purchase rate for Product X', 'is product ka last purchase rate kya tha')\n"
-        "- purchase_list: list recorded procurement purchase transactions with date filtering (e.g. 'show purchases from last month', 'purchases this month', 'recent purchases')\n"
-        "- sales_list: list recorded sales transactions (e.g. 'recent sales', 'show sales this month')\n"
-        "- sales_comparison: compare sales metrics between periods (e.g. 'compare this month sales with last month')\n"
-        "- inventory_movements: stock movement audit ledger (e.g. 'inventory movement history for Product X', 'show stock movements')\n"
-        "- margin_rankings: ranked products by highest or lowest gross margin % (e.g. 'which products have the highest recorded margins', 'highest margin products')\n"
-        "- general_knowledge: general question, person/entity lookup, or conversational query (e.g. 'Who is Narendra Modi?', 'Tell me about India', 'what is photosynthesis')\n"
-        "- out_of_scope: non-business general requests outside VANTIQ scope (e.g. weather, recipes, sports scores)\n"
-        "- explanation: user explicitly asks to explain a business/accounting concept or difference between terms (e.g. 'gross margin in Hindi', 'Purchase price aur selling price mein kya difference hai')\n"
-        "- unknown: query not recognized\n\n"
-        "Rules:\n"
-        "1. Never invent fake product names, prices, or statistics. All business facts are calculated by the database.\n"
-        "2. Understand queries in English, Hindi (Devanagari), and Hinglish (Hindi written in Roman script). "
-        "Do NOT classify inventory/catalogue queries in Hindi/Hinglish as 'explanation'—use the correct canonical intent (e.g. product_list, product_stock, inventory_summary).\n"
-        "3. Output MUST be valid JSON only with keys: intent, entity, operation, parameters, response_language, direct_response. Keep JSON compact.\n"
-        "4. If the query is a general knowledge question (e.g. 'Who is Narendra Modi?'), set intent to 'general_knowledge' and provide a concise, factual 1-2 sentence answer in 'direct_response'."
-    )
+        ctx = context or {}
+        active_ds = ctx.get("active_dataset_filename") or "None"
 
-    user_prompt = f"User Query: \"{query}\"\nActive Dataset Context: {active_ds}\nOutput JSON:"
-
-    req_payload = {
-        "model": cfg["model"],
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "stream": False,
-        "options": {
-            "temperature": 0.1,
-            "num_predict": 160,
-            "top_p": 0.9
-        }
-    }
-
-    call_timeout = timeout or cfg["timeout"]
-
-    set_inference_active(True)
-    try:
-        t0 = time.time()
-        resp = requests.post(
-            f"{cfg['base_url']}/api/chat",
-            json=req_payload,
-            timeout=call_timeout
+        system_prompt = (
+            "You are VANTIQ Natural Language Intent Router. "
+            "Your task is to interpret the user's business query into a strictly validated JSON structure.\n"
+            "Allowed canonical intents:\n"
+            "- product_list: list all catalogue products (e.g., 'show all products', 'saare products dikhao', 'kaun kaun se products hai')\n"
+            "- product_count: count total products or inventory units (e.g., 'how many products', 'kitne products hai')\n"
+            "- product_verify: audit and verify catalogue products (e.g., 'verify all the products', 'products check karo')\n"
+            "- product_search: find or search product by name or SKU\n"
+            "- product_stock: check stock balance of a specific product (e.g., 'stock of Capacitor', 'Capacitor ka stock kitna hai')\n"
+            "- inventory_summary: general inventory and stock summary when no product name is given (e.g., 'what is current stock bro', 'current stock batao', 'stock status')\n"
+            "- low_stock_products: products below reorder level or low in stock (e.g., 'low stock products', 'kam stock wale products')\n"
+            "- out_of_stock_products: products with zero stock (e.g., 'out of stock products', 'kaun se products ka stock khatam ho gaya')\n"
+            "- lowest_stock_products: products ordered by least stock (e.g., 'sabse kam stock kin products ka hai')\n"
+            "- products_without_price: products with no selling price configured\n"
+            "- product_price: get selling price or purchase cost of a specific product\n"
+            "- product_profit: calculate gross profit per unit or financial profit for a specific product (e.g., 'what is the profit of Capacitor', 'Capacitor bechne par kitna profit hai')\n"
+            "- product_margin: get gross margin, profit, or markup percentage for a specific product (e.g., 'margin kya hai chair me', 'chair ka margin kitna hai', 'what is the margin of chair')\n"
+            "- catalogue_margin: get overall or average gross margin across the catalogue or business (e.g., 'margin kya hai', 'what is the average margin', 'highest margin product')\n"
+            "- supplier_lookup: find supplier details for a product or list suppliers (e.g., 'supplier of <Product>', '<Product> ka supplier kaun hai', 'list suppliers')\n"
+            "- cheapest_product: find the cheapest product from previous list (e.g., 'inmein sabse sasta kaunsa hai', 'which is cheapest')\n"
+            "- expensive_product: find most expensive product from previous list\n"
+            "- dataset_summary: overview/summary of active dataset\n"
+            "- dataset_dimensions: row and column counts\n"
+            "- dataset_missing_values: missing or null cells in each column\n"
+            "- dataset_columns: list column names and types\n"
+            "- dataset_duplicates: check for duplicate rows\n"
+            "- dataset_head: show first rows\n"
+            "- dataset_stats: average, mean, min, max of a column\n"
+            "- dataset_filter: filter rows by column value\n"
+            "- dataset_group: group by category/column and count\n"
+            "- dataset_dates: detect date columns\n"
+            "- business_insights: explain top findings or executive summary\n"
+            "- bi_pricing: gross margins or profitability analysis\n"
+            "- bi_inventory: dataset inventory or stock status\n"
+            "- bi_sales: sales trends or revenue\n"
+            "- product_details: comprehensive details, SKU, stock, price, and supplier for a product (e.g. 'show details for SKU-101', 'details of Product X')\n"
+            "- purchase_rate_history: latest or last recorded purchase rate/cost for a product (e.g. 'what was the last purchase rate for Product X', 'is product ka last purchase rate kya tha')\n"
+            "- purchase_list: list recorded procurement purchase transactions with date filtering (e.g. 'show purchases from last month', 'purchases this month', 'recent purchases')\n"
+            "- sales_list: list recorded sales transactions (e.g. 'recent sales', 'show sales this month')\n"
+            "- sales_comparison: compare sales metrics between periods (e.g. 'compare this month sales with last month')\n"
+            "- inventory_movements: stock movement audit ledger (e.g. 'inventory movement history for Product X', 'show stock movements')\n"
+            "- margin_rankings: ranked products by highest or lowest gross margin % (e.g. 'which products have the highest recorded margins', 'highest margin products')\n"
+            "- general_knowledge: general question, person/entity lookup, or conversational query (e.g. 'Who is Narendra Modi?', 'Tell me about India', 'what is photosynthesis')\n"
+            "- out_of_scope: non-business general requests outside VANTIQ scope (e.g. weather, recipes, sports scores)\n"
+            "- explanation: user explicitly asks to explain a business/accounting concept or difference between terms (e.g. 'gross margin in Hindi', 'Purchase price aur selling price mein kya difference hai')\n"
+            "- unknown: query not recognized\n\n"
+            "Rules:\n"
+            "1. Never invent fake product names, prices, or statistics. All business facts are calculated by the database.\n"
+            "2. Understand queries in English, Hindi (Devanagari), and Hinglish (Hindi written in Roman script). "
+            "Do NOT classify inventory/catalogue queries in Hindi/Hinglish as 'explanation'—use the correct canonical intent (e.g. product_list, product_stock, inventory_summary).\n"
+            "3. Output MUST be valid JSON only with keys: intent, entity, operation, parameters, response_language, direct_response. Keep JSON compact.\n"
+            "4. If the query is a general knowledge question (e.g. 'Who is Narendra Modi?'), set intent to 'general_knowledge' and provide a concise, factual 1-2 sentence answer in 'direct_response'."
         )
-        elapsed = round(time.time() - t0, 2)
 
-        if resp.status_code != 200:
-            logger.warning(f"Ollama chat error HTTP {resp.status_code}: {resp.text[:200]}")
-            return None
-
-        result_data = resp.json()
-        raw_msg = result_data.get("message", {}).get("content", "")
-
-        parsed = _extract_json_from_text(raw_msg)
-        if not parsed or not isinstance(parsed, dict):
-            logger.warning(f"Failed to parse valid JSON from local LLM response: {raw_msg[:100]}")
-            return None
-
-        intent = parsed.get("intent", "unknown").lower().strip()
-        if intent not in CANONICAL_INTENTS:
-            logger.warning(f"Model returned non-canonical intent '{intent}'. Falling back.")
-            return None
-
-        # Sanitize structure
-        entity = str(parsed.get("entity", "general"))
-        operation = str(parsed.get("operation", "query"))
-        parameters = parsed.get("parameters") if isinstance(parsed.get("parameters"), dict) else {}
-        response_language = str(parsed.get("response_language", "en")).lower()
-        direct_response = parsed.get("direct_response")
-        if direct_response and not isinstance(direct_response, str):
-            direct_response = str(direct_response)
-
-        logger.info(f"Local LLM ({cfg['model']}) interpreted query in {elapsed}s -> intent='{intent}', entity='{entity}'")
-
-        return {
-            "intent": intent,
-            "entity": entity,
-            "operation": operation,
-            "parameters": parameters,
-            "response_language": response_language,
-            "direct_response": direct_response,
-            "model": cfg["model"],
-            "inference_time_seconds": elapsed,
-            "source": "local_llm"
+        user_prompt = f"User Query: \"{query}\"\nActive Dataset Context: {active_ds}\nOutput JSON:"
+        req_payload = {
+            "model": target_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.1,
+                "num_predict": 160,
+                "top_p": 0.9
+            }
         }
 
-    except requests.exceptions.Timeout:
-        logger.warning(f"Local LLM query timed out after {call_timeout}s. Falling back to deterministic router.")
-        return None
-    except requests.exceptions.ConnectionError:
-        logger.warning(f"Local LLM connection dropped. Falling back to deterministic router.")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error calling local LLM: {e}")
-        return None
-    finally:
-        set_inference_active(False)
+        call_timeout = timeout or cfg["timeout"]
+        set_inference_active(True)
+        try:
+            t0 = time.time()
+            resp = requests.post(
+                f"{cfg['base_url']}/api/chat",
+                json=req_payload,
+                timeout=call_timeout
+            )
+            elapsed = round(time.time() - t0, 2)
+            if resp.status_code != 200:
+                logger.warning(f"Ollama chat error ({target_model}) HTTP {resp.status_code}: {resp.text[:200]}")
+                return None
+
+            result_data = resp.json()
+            raw_msg = result_data.get("message", {}).get("content", "")
+            parsed = _extract_json_from_text(raw_msg)
+            if not parsed or not isinstance(parsed, dict):
+                logger.warning(f"Failed to parse valid JSON from model {target_model}: {raw_msg[:100]}")
+                return None
+
+            intent = parsed.get("intent", "unknown").lower().strip()
+            if intent not in CANONICAL_INTENTS:
+                logger.warning(f"Model ({target_model}) returned non-canonical intent '{intent}'.")
+                return None
+
+            entity = str(parsed.get("entity", "general"))
+            operation = str(parsed.get("operation", "query"))
+            parameters = parsed.get("parameters") if isinstance(parsed.get("parameters"), dict) else {}
+            response_language = str(parsed.get("response_language", "en")).lower()
+            direct_response = parsed.get("direct_response")
+            if direct_response and not isinstance(direct_response, str):
+                direct_response = str(direct_response)
+
+            logger.info(f"Local LLM ({target_model}) interpreted query in {elapsed}s -> intent='{intent}', entity='{entity}'")
+            return {
+                "intent": intent,
+                "entity": entity,
+                "operation": operation,
+                "parameters": parameters,
+                "response_language": response_language,
+                "direct_response": direct_response,
+                "model": target_model,
+                "inference_time_seconds": elapsed,
+                "source": "local_llm",
+                "offline_mode": True
+            }
+        except requests.exceptions.Timeout:
+            logger.warning(f"Local LLM ({target_model}) timed out after {call_timeout}s.")
+            return None
+        except requests.exceptions.ConnectionError:
+            logger.warning(f"Local LLM ({target_model}) connection dropped.")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error calling local LLM ({target_model}): {e}")
+            return None
+        finally:
+            set_inference_active(False)
+
+    # 1. Attempt primary model
+    res = _execute_interpretation(primary_model)
+    if res:
+        res["fallback_triggered"] = False
+        return res
+
+    # 2. Graceful fallback to alternate model if primary failed
+    if fallback_model != primary_model:
+        logger.info(f"Primary model '{primary_model}' did not yield result; attempting graceful fallback to '{fallback_model}'.")
+        fb_res = _execute_interpretation(fallback_model)
+        if fb_res:
+            fb_res["fallback_triggered"] = True
+            fb_res["fallback_from"] = primary_model
+            return fb_res
+
+    return None
 
 
 # Deterministic fallback explanations for core accounting & financial terms
@@ -513,118 +615,111 @@ def _lookup_fallback_explanation(concept: str, language: str) -> Optional[str]:
 def generate_explanation(
     concept_or_query: str,
     language: str = "en",
-    timeout: float = 45.0
+    timeout: float = 45.0,
+    model: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Generates a localized, concise conceptual explanation (e.g. Gross Margin in Hindi)
     using the local LLM. Zero external cloud API calls.
     """
     cfg = get_ollama_config()
-    health = check_ollama_health(base_url=cfg["base_url"], model=cfg["model"])
-
-    # Fallback definition check
+    primary_model = model or get_active_model()
+    fallback_model = get_fallback_model(primary_model)
     kb_fallback = _lookup_fallback_explanation(concept_or_query, language)
 
-    if not health["service_running"] or not health["model_available"]:
-        if kb_fallback:
-            return {
-                "success": True,
-                "content": kb_fallback,
-                "language": language,
-                "model": "local_knowledge_base",
-                "inference_time_seconds": 0.01,
-                "source": "fallback"
-            }
-        return {
-            "success": False,
-            "content": f"Local AI model ({cfg['model']}) is currently standby or offline. {health['message']}",
-            "language": language,
-            "model": cfg["model"],
-            "source": "fallback"
-        }
+    def _call_model(target_model: str) -> Optional[Dict[str, Any]]:
+        health = check_ollama_health(base_url=cfg["base_url"], model=target_model)
+        if not health["service_running"] or not health["model_available"]:
+            return None
 
-    lang_instr = f"in {language}" if language and language.lower() not in ("en", "english") else "in concise English"
-    prompt = (
-        f"You are SARTHI, an intelligent AI business intelligence assistant. "
-        f"Explain the following business or accounting concept clearly and concisely {lang_instr} in 1-2 sentences: "
-        f"\"{concept_or_query}\". "
-        f"Do not invent company numbers or data. Keep it accurate and professional."
-    )
-
-    set_inference_active(True)
-    try:
-        t0 = time.time()
-        resp = requests.post(
-            f"{cfg['base_url']}/api/chat",
-            json={
-                "model": cfg["model"],
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {
-                    "temperature": 0.2,
-                    "num_predict": 120
-                }
-            },
-            timeout=timeout
+        lang_instr = f"in {language}" if language and language.lower() not in ("en", "english") else "in concise English"
+        prompt = (
+            f"You are SARTHI, an intelligent AI business intelligence assistant. "
+            f"Explain the following business or accounting concept clearly and concisely {lang_instr} in 1-2 sentences: "
+            f"\"{concept_or_query}\". "
+            f"Do not invent company numbers or data. Keep it accurate and professional."
         )
-        elapsed = round(time.time() - t0, 2)
-        if resp.status_code == 200:
-            content = resp.json().get("message", {}).get("content", "").strip()
-            # If model returned empty or English instead of requested Hindi, verify script
-            if "hindi" in language.lower() and not any('\u0900' <= c <= '\u097F' for c in content) and kb_fallback:
-                content = kb_fallback
-            return {
-                "success": True,
-                "content": content,
-                "language": language,
-                "model": cfg["model"],
-                "inference_time_seconds": elapsed,
-                "source": "local_llm"
-            }
-        else:
-            if kb_fallback:
+
+        set_inference_active(True)
+        try:
+            t0 = time.time()
+            resp = requests.post(
+                f"{cfg['base_url']}/api/chat",
+                json={
+                    "model": target_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.2,
+                        "num_predict": 120
+                    }
+                },
+                timeout=timeout
+            )
+            elapsed = round(time.time() - t0, 2)
+            if resp.status_code == 200:
+                content = resp.json().get("message", {}).get("content", "").strip()
+                if "hindi" in language.lower() and not any('\u0900' <= c <= '\u097F' for c in content) and kb_fallback:
+                    content = kb_fallback
                 return {
                     "success": True,
-                    "content": kb_fallback,
+                    "content": content,
                     "language": language,
-                    "model": cfg["model"],
-                    "inference_time_seconds": 0.01,
-                    "source": "local_knowledge_base"
+                    "model": target_model,
+                    "inference_time_seconds": elapsed,
+                    "source": "local_llm",
+                    "offline_mode": True
                 }
-            return {
-                "success": False,
-                "content": f"Local model returned HTTP {resp.status_code}.",
-                "language": language,
-                "model": cfg["model"],
-                "source": "error"
-            }
-    except Exception as e:
-        logger.warning(f"Error generating explanation from local LLM: {e}")
-        if kb_fallback:
-            return {
-                "success": True,
-                "content": kb_fallback,
-                "language": language,
-                "model": cfg["model"],
-                "inference_time_seconds": 0.01,
-                "source": "local_knowledge_base"
-            }
+            return None
+        except Exception as e:
+            logger.warning(f"Error generating explanation with {target_model}: {e}")
+            return None
+        finally:
+            set_inference_active(False)
+
+    # 1. Primary model
+    res = _call_model(primary_model)
+    if res:
+        res["fallback_triggered"] = False
+        return res
+
+    # 2. Fallback model
+    if fallback_model != primary_model:
+        fb_res = _call_model(fallback_model)
+        if fb_res:
+            fb_res["fallback_triggered"] = True
+            return fb_res
+
+    # 3. Deterministic Knowledge Base Fallback
+    if kb_fallback:
         return {
-            "success": False,
-            "content": f"Local inference failed: {str(e)}",
+            "success": True,
+            "content": kb_fallback,
             "language": language,
-            "model": cfg["model"],
-            "source": "error"
+            "model": "local_knowledge_base",
+            "inference_time_seconds": 0.01,
+            "source": "fallback",
+            "fallback_triggered": True,
+            "offline_mode": True
         }
-    finally:
-        set_inference_active(False)
+
+    return {
+        "success": False,
+        "content": f"Local AI model ({primary_model}) is currently standby or offline.",
+        "language": language,
+        "model": primary_model,
+        "source": "fallback",
+        "fallback_triggered": True,
+        "offline_mode": True
+    }
 
 
 def generate_chat_response(
     query: str,
     language: str = "en",
     context_history: Optional[List[Dict[str, str]]] = None,
-    timeout: float = 35.0
+    timeout: float = 35.0,
+    model: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Generates a conversational response using the local Ollama LLM.
@@ -632,23 +727,8 @@ def generate_chat_response(
     Returns {success: bool, content: str, source: str, model: str, status: str}
     """
     cfg = get_ollama_config()
-    health = check_ollama_health(base_url=cfg["base_url"], model=cfg["model"], timeout=2.5)
-    if not health["service_running"]:
-        return {
-            "success": False,
-            "status": "offline",
-            "content": f"Local AI service (Ollama) is offline or not running at {cfg['base_url']}.",
-            "source": "error",
-            "model": cfg["model"]
-        }
-    if not health["model_available"]:
-        return {
-            "success": False,
-            "status": "model_missing",
-            "content": f"Configured model '{cfg['model']}' is not installed in local Ollama.",
-            "source": "error",
-            "model": cfg["model"]
-        }
+    primary_model = model or get_active_model()
+    fallback_model = get_fallback_model(primary_model)
 
     lang_guidance = (
         "Respond in natural Hindi (Devanagari script)." if language == "hi"
@@ -673,67 +753,89 @@ def generate_chat_response(
                 messages.append({"role": "assistant", "content": turn["assistant"]})
     messages.append({"role": "user", "content": query})
 
-    set_inference_active(True)
-    try:
-        t0 = time.time()
-        resp = requests.post(
-            f"{cfg['base_url']}/api/chat",
-            json={
-                "model": cfg["model"],
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": 0.3,
-                    "num_predict": 150
+    def _call_chat(target_model: str) -> Optional[Dict[str, Any]]:
+        health = check_ollama_health(base_url=cfg["base_url"], model=target_model, timeout=2.5)
+        if not health["service_running"] or not health["model_available"]:
+            return None
+
+        set_inference_active(True)
+        try:
+            t0 = time.time()
+            resp = requests.post(
+                f"{cfg['base_url']}/api/chat",
+                json={
+                    "model": target_model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": 150
+                    }
+                },
+                timeout=timeout
+            )
+            elapsed = round(time.time() - t0, 2)
+            if resp.status_code == 200:
+                content = resp.json().get("message", {}).get("content", "").strip()
+                return {
+                    "success": True,
+                    "status": "online",
+                    "content": content,
+                    "source": "local_llm",
+                    "model": target_model,
+                    "inference_time_seconds": elapsed,
+                    "offline_mode": True
                 }
-            },
-            timeout=timeout
-        )
-        elapsed = round(time.time() - t0, 2)
-        if resp.status_code == 200:
-            content = resp.json().get("message", {}).get("content", "").strip()
-            return {
-                "success": True,
-                "status": "online",
-                "content": content,
-                "source": "local_llm",
-                "model": cfg["model"],
-                "inference_time_seconds": elapsed
-            }
-        return {
-            "success": False,
-            "status": "error",
-            "content": f"Ollama HTTP {resp.status_code}",
-            "source": "error",
-            "model": cfg["model"]
-        }
-    except requests.exceptions.Timeout:
-        logger.warning(f"generate_chat_response timed out after {timeout}s.")
-        return {
-            "success": False,
-            "status": "timeout",
-            "content": f"Inference request timed out after {timeout} seconds.",
-            "source": "timeout",
-            "model": cfg["model"]
-        }
-    except requests.exceptions.ConnectionError:
-        logger.warning("generate_chat_response connection dropped.")
+            return None
+        except Exception as e:
+            logger.warning(f"Error calling {target_model} in generate_chat_response: {e}")
+            return None
+        finally:
+            set_inference_active(False)
+
+    # 1. Try primary model
+    res = _call_chat(primary_model)
+    if res:
+        res["fallback_triggered"] = False
+        return res
+
+    # 2. Try fallback model
+    if fallback_model != primary_model:
+        fb_res = _call_chat(fallback_model)
+        if fb_res:
+            fb_res["fallback_triggered"] = True
+            return fb_res
+
+    # Check health for diagnostic message
+    health = check_ollama_health(base_url=cfg["base_url"], model=primary_model, timeout=2.0)
+    if not health["service_running"]:
         return {
             "success": False,
             "status": "offline",
-            "content": "Local Ollama connection dropped during chat response generation.",
+            "content": f"Local AI service (Ollama) is offline or not running at {cfg['base_url']}.",
             "source": "error",
-            "model": cfg["model"]
+            "model": primary_model,
+            "offline_mode": True,
+            "fallback_triggered": True
         }
-    except Exception as e:
-        logger.warning(f"Error in generate_chat_response: {e}")
+    if not health["model_available"]:
         return {
             "success": False,
-            "status": "error",
-            "content": str(e),
+            "status": "model_missing",
+            "content": f"Configured model '{primary_model}' is not installed in local Ollama.",
             "source": "error",
-            "model": cfg["model"]
+            "model": primary_model,
+            "offline_mode": True,
+            "fallback_triggered": True
         }
-    finally:
-        set_inference_active(False)
+
+    return {
+        "success": False,
+        "status": "error",
+        "content": f"Local inference failed for '{primary_model}'.",
+        "source": "error",
+        "model": primary_model,
+        "offline_mode": True,
+        "fallback_triggered": True
+    }
 
